@@ -1,0 +1,131 @@
+﻿<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             x:Class="BikeMate.MainPage"
+             BackgroundColor="White">
+
+    <Grid>
+
+        <!-- Onboarding Section -->
+        <Grid IsVisible="{Binding IsOnboardingVisible}" RowDefinitions="Auto, *, Auto, Auto" Padding="20">
+
+            <Button Grid.Row="0"
+                    Text="Skip"
+                    Command="{Binding SkipOnboardingCommand}"
+                    HorizontalOptions="End"
+                    BackgroundColor="Transparent"
+                    TextColor="#6E6E6E" />
+
+            <!-- FIX: Added x:Name="boardingCarousel" so the Button can reference its current item -->
+            <CarouselView x:Name="boardingCarousel" Grid.Row="1" ItemsSource="{Binding BoardingItems}" Position="{Binding CurrentPosition}">
+                <CarouselView.ItemTemplate>
+                    <DataTemplate>
+                        <VerticalStackLayout VerticalOptions="Center" HorizontalOptions="Center" Spacing="20">
+                            <Image Source="{Binding ImageSource}" HeightRequest="200" WidthRequest="200" HorizontalOptions="Center"/>
+                            <Label Text="{Binding Title}" FontSize="22" FontAttributes="Bold" HorizontalTextAlignment="Center" TextColor="Black"/>
+                            <Label Text="{Binding Description}" FontSize="14" HorizontalTextAlignment="Center" TextColor="#4A4A4A" Margin="20,0"/>
+                        </VerticalStackLayout>
+                    </DataTemplate>
+                </CarouselView.ItemTemplate>
+            </CarouselView>
+
+            <IndicatorView Grid.Row="2" HorizontalOptions="Center" Margin="0,0,0,20" IndicatorColor="LightGray" SelectedIndicatorColor="#F16E30" ItemsSource="{Binding BoardingItems}" Position="{Binding CurrentPosition}"/>
+
+            <Button Grid.Row="3" 
+                    Text="{Binding CurrentButtonText}" 
+                    Command="{Binding NextCommand}" 
+                    BackgroundColor="#F16E30" 
+                    TextColor="White" 
+                    CornerRadius="15" 
+                    HeightRequest="50" 
+                    FontAttributes="Bold"/>
+        </Grid>
+
+        <!-- Paywall Section -->
+        <ScrollView IsVisible="{Binding IsPaywallVisible}" Padding="20">
+            <VerticalStackLayout Spacing="15" VerticalOptions="Center">
+                <Button Text="✕" Command="{Binding ClosePaywallCommand}" HorizontalOptions="Start" BackgroundColor="Transparent" TextColor="Gray" FontSize="18"/>
+
+                <Label Text="Subscribe Now!" FontSize="24" FontAttributes="Bold" TextColor="#F16E30" HorizontalOptions="Center"/>
+                <Label Text="Unlock all the power of this mobile tool and enjoy digital experience like never before!" FontSize="12" HorizontalTextAlignment="Center" TextColor="Gray"/>
+
+                <Image Source="bikemate_logo.png" HeightRequest="120" HorizontalOptions="Center" Margin="0,10"/>
+
+                <Border Stroke="LightGray" StrokeThickness="1" Padding="15">
+                    <Border.StrokeShape>
+                        <RoundRectangle CornerRadius="10" />
+                    </Border.StrokeShape>
+                    <Grid ColumnDefinitions="*, Auto">
+                        <VerticalStackLayout Grid.Column="0">
+                            <Label Text="Annual" FontAttributes="Bold" TextColor="Black"/>
+                            <Label Text="First 30 days free - Then ₱1,000/Year" FontSize="12" TextColor="Gray"/>
+                        </VerticalStackLayout>
+                        <Label Grid.Column="1" Text="Best Value" BackgroundColor="#2ECC71" TextColor="White" Padding="5,2" FontSize="10" VerticalOptions="Center"/>
+                    </Grid>
+                </Border>
+
+                <Border Stroke="LightGray" StrokeThickness="1" Padding="15">
+                    <Border.StrokeShape>
+                        <RoundRectangle CornerRadius="10" />
+                    </Border.StrokeShape>
+                    <VerticalStackLayout>
+                        <Label Text="Monthly" FontAttributes="Bold" TextColor="Black"/>
+                        <Label Text="First 7 days free - Then ₱100/Month" FontSize="12" TextColor="Gray"/>
+                    </VerticalStackLayout>
+                </Border>
+
+                <Button Text="Start 30-day free trial" Command="{Binding StartTrialCommand}" BackgroundColor="#F16E30" TextColor="White" CornerRadius="15" HeightRequest="50" FontAttributes="Bold" Margin="0,10,0,0"/>
+                <Label Text="By placing this order, you agree to the Terms of Service and Privacy Policy..." FontSize="9" HorizontalTextAlignment="Center" TextColor="Gray"/>
+            </VerticalStackLayout>
+        </ScrollView>
+
+        <!-- Login Section -->
+        <ScrollView IsVisible="{Binding IsLoginVisible}" Padding="20">
+            <VerticalStackLayout Spacing="20" VerticalOptions="Center">
+                <Image Source="bikemate_logo.png" HeightRequest="150" HorizontalOptions="Center"/>
+
+                <Entry Placeholder="Enter email..." Keyboard="Email" Text="{Binding Email}" TextColor="Black" PlaceholderColor="Gray"/>
+                <Entry Placeholder="Enter password..." IsPassword="True" Text="{Binding Password}" TextColor="Black" PlaceholderColor="Gray"/>
+
+                <Button Text="Sign In" Command="{Binding SignInCommand}" BackgroundColor="#F16E30" TextColor="White" CornerRadius="15" HeightRequest="50" FontAttributes="Bold"/>
+
+                <Label Text="{Binding LoginStatus}" FontSize="12" TextColor="#6E6E6E" HorizontalTextAlignment="Center"/>
+
+                <Label Text="Open classroom demo mode" FontSize="13" FontAttributes="Bold" TextColor="#1F2933" HorizontalTextAlignment="Center"/>
+
+                <Grid ColumnDefinitions="*,*" RowDefinitions="Auto,Auto" ColumnSpacing="10" RowSpacing="10">
+                    <Button Text="Customer" Command="{Binding SelectDemoRoleCommand}" CommandParameter="Customer" BackgroundColor="#FFF3EA" TextColor="#C45500" BorderColor="#FFD5B5" BorderWidth="1" CornerRadius="8"/>
+                    <Button Text="Mechanic" Command="{Binding SelectDemoRoleCommand}" CommandParameter="Mechanic" Grid.Column="1" BackgroundColor="#EEF7FF" TextColor="#175C9E" BorderColor="#B8DBFF" BorderWidth="1" CornerRadius="8"/>
+                    <Button Text="Shop Admin" Command="{Binding SelectDemoRoleCommand}" CommandParameter="ShopAdmin" Grid.Row="1" BackgroundColor="#EFFAF3" TextColor="#226B3D" BorderColor="#BFE8CE" BorderWidth="1" CornerRadius="8"/>
+                    <Button Text="System Admin" Command="{Binding SelectDemoRoleCommand}" CommandParameter="SystemAdmin" Grid.Row="1" Grid.Column="1" BackgroundColor="#F2F0FF" TextColor="#4B3EA4" BorderColor="#D5D0FF" BorderWidth="1" CornerRadius="8"/>
+                </Grid>
+
+                <HorizontalStackLayout HorizontalOptions="Center" Spacing="20">
+                    <Button Text="G Google" 
+                    Command="{Binding GoogleLoginCommand}"
+                    TextColor="Black" 
+                    BackgroundColor="White" 
+                    BorderColor="LightGray" 
+                    BorderWidth="1" 
+                    WidthRequest="120"/>
+
+                    <Button Text="f Facebook" 
+                    Command="{Binding FacebookLoginCommand}"
+                    TextColor="Black" 
+                    BackgroundColor="White" 
+                    BorderColor="LightGray" 
+                    BorderWidth="1" 
+                    WidthRequest="120"/>
+                </HorizontalStackLayout>
+
+                <Button Text="Create Account" Command="{Binding CreateAccountCommand}" BackgroundColor="#2C3E50" TextColor="White" CornerRadius="15" HeightRequest="50"/>
+                <Button Text="Forgot Password"
+                        Command="{Binding ForgotPasswordCommand}"
+                        BackgroundColor="Transparent"
+                        TextColor="Gray"
+                        FontAttributes="Bold"/>
+            </VerticalStackLayout>
+        </ScrollView>
+
+    </Grid>
+</ContentPage>

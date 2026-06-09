@@ -1,0 +1,116 @@
+using BikeMate.Api.Helpers;
+using BikeMate.Api.Hubs;
+using BikeMate.Api.Services;
+using BikeMate.Core.DTOs;
+using BikeMate.Core.Entities;
+using BikeMate.Infrastructure.Data;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.SignalR;
+using Microsoft.EntityFrameworkCore;
+
+namespace BikeMate.Api.Controllers;
+
+[ApiController]
+[Route("api/conversations")]
+[Authorize]
+public sealed class MessagesController(
+    BikeMateDbContext db,
+    IMessageService messageService,
+    IHubContext<ChatHub> hubContext) : ControllerBase
+{
+    [HttpGet]
+    public async Task<ActionResult<IReadOnlyCollection<ConversationSummaryDto>>> GetConversations(CancellationToken cancellationToken)
+    {
+        var userId = User.GetUserId();
+        var conversations = await db.Conversations
+            .Include(x => x.Participants)
+            .ThenInclude(x => x.User)
+            .Include(x => x.Messages)
+            .Include(x => x.Request)
+            .ThenInclude(x => x!.Shop)
+            .Include(x => x.Request)
+            .ThenInclude(x => x!.ShopService)
+            .Include(x => x.Request)
+            .ThenInclude(x => x!.Mechanic)
+            .ThenInclude(x => x!.User)
+            .Where(x => x.Participants.Any(p => p.UserId == userId))
+            .OrderByDescending(x => x.LastMessageAt ?? x.CreatedAt)
+            .ToArrayAsync(cancellationToken);
+
+        return Ok(conversations.Select(x =>
+        {
+            var otherUser = x.Participants.FirstOrDefault(p => p.UserId != userId)?.User;
+            var lastMessage = x.Messages.OrderByDescending(m => m.CreatedAt).FirstOrDefault();
+            var title = x.Request?.Shop?.ShopName
+                ?? (otherUser is null ? $"Conversation #{x.ConversationId}" : $"{otherUser.FirstName} {otherUser.LastName}");
+            var subtitle = x.Request?.ShopService?.ServiceName
+                ?? x.Request?.IssueDescription
+                ?? otherUser?.PhoneNumber
+                ?? otherUser?.Email;
+
+            return new ConversationSummaryDto(
+                x.ConversationId,
+                x.RequestId,
+                x.ConversationType,
+                x.LastMessageAt,
+                title,
+                subtitle,
+                otherUser?.UserId,
+                otherUser?.ProfileImageUrl,
+                lastMessage?.MessageText);
+        }).ToArray());
+    }
+
+    [HttpPost("start")]
+    public async Task<ActionResult<ConversationDto>> Start(StartConversationDto dto, CancellationToken cancellationToken)
+    {
+        var participants = dto.ParticipantUserIds.Append(User.GetUserId()).Distinct().ToArray();
+        var conversation = new Conversation
+        {
+            RequestId = dto.RequestId,
+            ConversationType = dto.RequestId is null ? "direct" : "service_request",
+            CreatedAt = DateTime.UtcNow,
+            Participants = participants.Select(userId => new ConversationParticipant { UserId = userId, JoinedAt = DateTime.UtcNow }).ToList()
+        };
+        db.Conversations.Add(conversation);
+        await db.SaveChangesAsync(cancellationToken);
+        return Ok(new ConversationDto(conversation.ConversationId, conversation.RequestId, conversation.ConversationType, conversation.LastMessageAt));
+    }
+
+    [HttpGet("{conversationId:int}/messages")]
+    public async Task<ActionResult<IReadOnlyCollection<MessageDto>>> GetMessages(int conversationId, CancellationToken cancellationToken)
+    {
+        return Ok(await db.Messages
+            .Where(x => x.ConversationId == conversationId)
+            .OrderBy(x => x.CreatedAt)
+            .Select(x => new MessageDto(x.MessageId, x.ConversationId, x.SenderUserId, x.MessageText, x.AttachmentUrl, x.CreatedAt, x.ReadAt))
+            .ToArrayAsync(cancellationToken));
+    }
+
+    [HttpPost("{conversationId:int}/messages")]
+    public async Task<ActionResult<MessageDto>> Send(int conversationId, SendMessageDto dto, CancellationToken cancellationToken)
+    {
+        var message = await messageService.SendAsync(User.GetUserId(), conversationId, dto, cancellationToken);
+        await hubContext.Clients.Group($"conversation:{conversationId}").SendAsync("MessageReceived", message, cancellationToken);
+        return Ok(message);
+    }
+
+    [HttpPost("{conversationId:int}/read")]
+    public async Task<IActionResult> MarkRead(int conversationId, CancellationToken cancellationToken)
+    {
+        var userId = User.GetUserId();
+        await db.Messages
+            .Where(x => x.ConversationId == conversationId && x.SenderUserId != userId && x.ReadAt == null)
+            .ExecuteUpdateAsync(x => x.SetProperty(m => m.ReadAt, DateTime.UtcNow), cancellationToken);
+
+        var participant = await db.ConversationParticipants.SingleOrDefaultAsync(x => x.ConversationId == conversationId && x.UserId == userId, cancellationToken);
+        if (participant is not null)
+        {
+            participant.LastReadAt = DateTime.UtcNow;
+            await db.SaveChangesAsync(cancellationToken);
+        }
+
+        return Ok(new { message = "Conversation marked as read." });
+    }
+}

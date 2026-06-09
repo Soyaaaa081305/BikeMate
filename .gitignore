@@ -1,0 +1,17 @@
+.vs/
+bin/
+obj/
+**/bin/
+**/obj/
+
+*.user
+*.rsuser
+*.suo
+*.userosscache
+*.sln.docstates
+
+*.nupkg
+TestResults/
+
+BikeMate.Api/wwwroot/uploads/*
+!BikeMate.Api/wwwroot/uploads/.gitkeep

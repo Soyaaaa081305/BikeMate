@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage
+    x:Class="BikeMate.Views.Auth.OtpVerificationPage"
+    xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+    BackgroundColor="#F7F7F7"
+    Shell.NavBarIsVisible="False">
+
+    <ScrollView>
+        <VerticalStackLayout Padding="24,40" Spacing="18">
+            <Image Source="bikemate_logo.png" HeightRequest="96" HorizontalOptions="Center" />
+            <Label Text="Verify Email" FontSize="26" FontAttributes="Bold" TextColor="#1F2933" HorizontalTextAlignment="Center" />
+            <Label x:Name="EmailLabel" Text="Enter the OTP sent to your email." FontSize="14" TextColor="#6E6E6E" HorizontalTextAlignment="Center" />
+
+            <Border BackgroundColor="White" Stroke="#E8E8E8" Padding="18">
+                <Border.StrokeShape>
+                    <RoundRectangle CornerRadius="8" />
+                </Border.StrokeShape>
+                <VerticalStackLayout Spacing="14">
+                    <Entry x:Name="OtpEntry" Placeholder="6-digit OTP" Keyboard="Numeric" MaxLength="6" HorizontalTextAlignment="Center" FontSize="22" TextColor="#1F2933" PlaceholderColor="#919191" />
+                    <Button Text="Verify" Clicked="OnVerifyClicked" BackgroundColor="#FF6B00" TextColor="White" CornerRadius="8" HeightRequest="50" FontAttributes="Bold" />
+                    <Button Text="Resend OTP" Clicked="OnResendClicked" BackgroundColor="White" TextColor="#FF6B00" BorderColor="#FFD5B5" BorderWidth="1" CornerRadius="8" />
+                </VerticalStackLayout>
+            </Border>
+
+            <ActivityIndicator x:Name="BusyIndicator" IsVisible="False" IsRunning="False" Color="#FF6B00" />
+        </VerticalStackLayout>
+    </ScrollView>
+</ContentPage>

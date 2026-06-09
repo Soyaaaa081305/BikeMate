@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage
+    x:Class="BikeMate.Views.Auth.RegisterPage"
+    xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+    BackgroundColor="#F7F7F7"
+    Shell.NavBarIsVisible="False">
+
+    <ScrollView>
+        <VerticalStackLayout Padding="24,28" Spacing="16">
+            <Grid ColumnDefinitions="Auto,*">
+                <Button Text="‹" Clicked="OnBackClicked" BackgroundColor="Transparent" TextColor="#1F2933" FontSize="28" WidthRequest="44" />
+                <Image Source="bikemate_logo.png" Grid.Column="1" HeightRequest="72" HorizontalOptions="Center" />
+            </Grid>
+
+            <Label Text="Create Account" FontSize="26" FontAttributes="Bold" TextColor="#1F2933" />
+            <Label Text="Start with a customer account. Other roles can be created from the API seed or admin flow." FontSize="13" TextColor="#6E6E6E" />
+
+            <Border BackgroundColor="White" Stroke="#E8E8E8" Padding="18">
+                <Border.StrokeShape>
+                    <RoundRectangle CornerRadius="8" />
+                </Border.StrokeShape>
+                <VerticalStackLayout Spacing="12">
+                    <Grid ColumnDefinitions="*,*" ColumnSpacing="10">
+                        <Entry x:Name="FirstNameEntry" Placeholder="First name" TextColor="#1F2933" PlaceholderColor="#919191" />
+                        <Entry x:Name="LastNameEntry" Placeholder="Last name" Grid.Column="1" TextColor="#1F2933" PlaceholderColor="#919191" />
+                    </Grid>
+                    <Entry x:Name="EmailEntry" Placeholder="Email" Keyboard="Email" TextColor="#1F2933" PlaceholderColor="#919191" />
+                    <Entry x:Name="PhoneEntry" Placeholder="Phone number" Keyboard="Telephone" TextColor="#1F2933" PlaceholderColor="#919191" />
+                    <Entry x:Name="PasswordEntry" Placeholder="Password" IsPassword="True" TextColor="#1F2933" PlaceholderColor="#919191" />
+                    <Entry x:Name="ConfirmPasswordEntry" Placeholder="Confirm password" IsPassword="True" TextColor="#1F2933" PlaceholderColor="#919191" />
+                    <Button Text="Create Account" Clicked="OnRegisterClicked" BackgroundColor="#FF6B00" TextColor="White" CornerRadius="8" HeightRequest="50" FontAttributes="Bold" />
+                </VerticalStackLayout>
+            </Border>
+
+            <ActivityIndicator x:Name="BusyIndicator" IsVisible="False" IsRunning="False" Color="#FF6B00" />
+        </VerticalStackLayout>
+    </ScrollView>
+</ContentPage>

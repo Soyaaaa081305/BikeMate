@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage
+    x:Class="BikeMate.Views.Auth.LoginPage"
+    xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+    BackgroundColor="#F7F7F7">
+
+    <ScrollView>
+        <VerticalStackLayout Padding="24,36" Spacing="18">
+            <Image Source="bikemate_logo.png" HeightRequest="112" HorizontalOptions="Center" />
+
+            <VerticalStackLayout Spacing="4">
+                <Label Text="Welcome to BikeMate" FontSize="26" FontAttributes="Bold" TextColor="#1F2933" HorizontalTextAlignment="Center" />
+                <Label Text="Book fast motorcycle repair and roadside service." FontSize="14" TextColor="#6E6E6E" HorizontalTextAlignment="Center" />
+            </VerticalStackLayout>
+
+            <Border BackgroundColor="White" Stroke="#E8E8E8" Padding="18" Margin="0,12,0,0">
+                <Border.StrokeShape>
+                    <RoundRectangle CornerRadius="8" />
+                </Border.StrokeShape>
+                <VerticalStackLayout Spacing="14">
+                    <Label Text="Sign in" FontSize="18" FontAttributes="Bold" TextColor="#1F2933" />
+
+                    <Border Stroke="#E1E1E1" BackgroundColor="#FAFAFA" Padding="12,4">
+                        <Border.StrokeShape>
+                            <RoundRectangle CornerRadius="8" />
+                        </Border.StrokeShape>
+                        <Entry x:Name="EmailEntry" Placeholder="Email" Keyboard="Email" TextColor="#1F2933" PlaceholderColor="#919191" />
+                    </Border>
+
+                    <Border Stroke="#E1E1E1" BackgroundColor="#FAFAFA" Padding="12,4">
+                        <Border.StrokeShape>
+                            <RoundRectangle CornerRadius="8" />
+                        </Border.StrokeShape>
+                        <Entry x:Name="PasswordEntry" Placeholder="Password" IsPassword="True" TextColor="#1F2933" PlaceholderColor="#919191" />
+                    </Border>
+
+                    <Button Text="Sign In" Clicked="OnSignInClicked" BackgroundColor="#FF6B00" TextColor="White" CornerRadius="8" HeightRequest="50" FontAttributes="Bold" />
+
+                    <Grid ColumnDefinitions="*,*" ColumnSpacing="12">
+                        <Button Text="Google" Clicked="OnGoogleClicked" Grid.Column="0" BackgroundColor="White" TextColor="#1F2933" BorderColor="#E1E1E1" BorderWidth="1" CornerRadius="8" />
+                        <Button Text="Create Account" Clicked="OnCreateAccountClicked" Grid.Column="1" BackgroundColor="#1F2933" TextColor="White" CornerRadius="8" />
+                    </Grid>
+
+                    <Label Text="customer@bikemate.test / Password123!" FontSize="12" TextColor="#6E6E6E" HorizontalTextAlignment="Center" />
+                </VerticalStackLayout>
+            </Border>
+
+            <ActivityIndicator x:Name="BusyIndicator" IsVisible="False" IsRunning="False" Color="#FF6B00" />
+        </VerticalStackLayout>
+    </ScrollView>
+</ContentPage>
