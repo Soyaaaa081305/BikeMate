@@ -15,7 +15,7 @@ internal static class CustomerUi
     public static readonly Color Border = Color.FromArgb("#E6E6E6");
     public static readonly Color Page = Color.FromArgb("#F6F6F6");
 
-    public const string OnlineBikeRepairImage = "https://cdn.pixabay.com/photo/2020/07/29/12/09/bicycle-5446055_1280.jpg";
+    public const string OnlineBikeRepairImage = "https://img.icons8.com/color/96/bicycle.png";
     public const string HomeIcon = "https://img.icons8.com/ios/50/home--v1.png";
     public const string ScheduleIcon = "https://img.icons8.com/ios/50/calendar--v1.png";
     public const string PaymentsIcon = "https://img.icons8.com/ios/50/wallet--v1.png";
@@ -852,7 +852,7 @@ public sealed class CustomerMessagesPage : CustomerPageBase
         var row = Card(grid, conversation.LastMessageText is null ? Color.FromArgb("#EFEFF4") : CustomerUi.LightOrange, 0, new Thickness(10));
         row.GestureRecognizers.Add(new TapGestureRecognizer
         {
-            Command = new Command(async () => await Shell.Current.GoToAsync($"{nameof(CustomerChatPage)}?conversationId={conversation.ConversationId}"))
+            Command = new Command(async () => await Shell.Current.Navigation.PushAsync(new CustomerChatPage(conversation.ConversationId)))
         });
         return row;
     }
@@ -864,12 +864,19 @@ public sealed class CustomerChatPage : CustomerPageBase, IQueryAttributable
     private CustomerMeDto? _customer;
     private ConversationSummaryDto? _conversation;
     private IReadOnlyList<MessageDto> _messages = [];
-    private readonly Entry _messageEntry = new() { Placeholder = "Message", BackgroundColor = Color.FromArgb("#E8E8E8"), FontSize = 12 };
+    private Entry? _messageEntry;
+    private string _draftMessage = string.Empty;
 
     public CustomerChatPage()
     {
         Title = "Chat";
         Render("Loading chat...");
+    }
+
+    public CustomerChatPage(int conversationId)
+        : this()
+    {
+        _conversationId = conversationId;
     }
 
     public void ApplyQueryAttributes(IDictionary<string, object> query)
@@ -950,7 +957,17 @@ public sealed class CustomerChatPage : CustomerPageBase, IQueryAttributable
             BackgroundColor = Colors.Transparent,
             TextColor = CustomerUi.Dark,
             FontSize = 22,
-            Command = new Command(async () => await Shell.Current.GoToAsync(".."))
+            Command = new Command(async () =>
+            {
+                if (Shell.Current.Navigation.NavigationStack.Count > 1)
+                {
+                    await Shell.Current.Navigation.PopAsync();
+                }
+                else
+                {
+                    await Shell.Current.GoToAsync("..");
+                }
+            })
         }, 0, 0);
         grid.Add(Avatar(Initials(_conversation?.Title), 42, CustomerUi.LightOrange), 1, 0);
 
@@ -1018,6 +1035,15 @@ public sealed class CustomerChatPage : CustomerPageBase, IQueryAttributable
 
     private View BuildComposer()
     {
+        _messageEntry = new Entry
+        {
+            Text = _draftMessage,
+            Placeholder = "Message",
+            BackgroundColor = Color.FromArgb("#E8E8E8"),
+            FontSize = 12
+        };
+        _messageEntry.TextChanged += (_, e) => _draftMessage = e.NewTextValue ?? string.Empty;
+
         var stack = new VerticalStackLayout { Padding = new Thickness(14, 4, 14, 10), Spacing = 6 };
         var attachments = new HorizontalStackLayout
         {
@@ -1054,7 +1080,7 @@ public sealed class CustomerChatPage : CustomerPageBase, IQueryAttributable
 
     private async Task SendAsync()
     {
-        var text = _messageEntry.Text?.Trim();
+        var text = (_messageEntry?.Text ?? _draftMessage).Trim();
         if (_conversationId <= 0 || string.IsNullOrWhiteSpace(text))
         {
             return;
@@ -1063,7 +1089,11 @@ public sealed class CustomerChatPage : CustomerPageBase, IQueryAttributable
         try
         {
             await CustomerApiClient.SendMessageAsync(_conversationId, text);
-            _messageEntry.Text = string.Empty;
+            _draftMessage = string.Empty;
+            if (_messageEntry is not null)
+            {
+                _messageEntry.Text = string.Empty;
+            }
             await LoadAsync();
         }
         catch (Exception ex)
@@ -1477,10 +1507,14 @@ public sealed class BookServicePage : CustomerPageBase
 {
     private CustomerMeDto? _customer;
     private IReadOnlyList<ShopServiceDto> _services = [];
-    private readonly Picker _motorcyclePicker = new() { Title = "Motorcycle" };
-    private readonly Picker _servicePicker = new() { Title = "Service" };
-    private readonly Picker _addressPicker = new() { Title = "Address" };
-    private readonly Editor _issueEditor = new() { Placeholder = "Describe the issue", HeightRequest = 120, BackgroundColor = Color.FromArgb("#F1F1F1") };
+    private Picker? _motorcyclePicker;
+    private Picker? _servicePicker;
+    private Picker? _addressPicker;
+    private Editor? _issueEditor;
+    private int _selectedMotorcycleIndex;
+    private int _selectedServiceIndex;
+    private int _selectedAddressIndex;
+    private string _issueText = string.Empty;
 
     public BookServicePage()
     {
@@ -1495,37 +1529,12 @@ public sealed class BookServicePage : CustomerPageBase
         {
             _customer = await CustomerApiClient.GetCustomerAsync();
             _services = await CustomerApiClient.SearchServicesAsync();
-            PopulatePickers();
             Render();
         }
         catch (Exception ex)
         {
             Render($"Connect the API to create real bookings. {ex.Message}");
         }
-    }
-
-    private void PopulatePickers()
-    {
-        _motorcyclePicker.Items.Clear();
-        foreach (var motorcycle in _customer?.Motorcycles ?? [])
-        {
-            _motorcyclePicker.Items.Add($"{motorcycle.Brand} {motorcycle.Model}");
-        }
-        _motorcyclePicker.SelectedIndex = _motorcyclePicker.Items.Count > 0 ? 0 : -1;
-
-        _servicePicker.Items.Clear();
-        foreach (var service in _services)
-        {
-            _servicePicker.Items.Add($"{service.ServiceName} - {Money(service.BasePrice)}");
-        }
-        _servicePicker.SelectedIndex = _servicePicker.Items.Count > 0 ? 0 : -1;
-
-        _addressPicker.Items.Clear();
-        foreach (var address in _customer?.Addresses ?? [])
-        {
-            _addressPicker.Items.Add($"{address.Label ?? "Address"} - {address.AddressLine}");
-        }
-        _addressPicker.SelectedIndex = _addressPicker.Items.Count > 0 ? 0 : -1;
     }
 
     private void Render(string? banner = null)
@@ -1538,7 +1547,48 @@ public sealed class BookServicePage : CustomerPageBase
             body.Add(Card(Label(banner, 11, CustomerUi.Muted), Colors.White, 8, new Thickness(12)));
         }
 
-        body.Add(Card(new VerticalStackLayout
+        body.Add(BuildBookingPickers());
+        _issueEditor = new Editor
+        {
+            Text = _issueText,
+            Placeholder = "Describe the issue",
+            HeightRequest = 120,
+            BackgroundColor = Color.FromArgb("#F1F1F1")
+        };
+        _issueEditor.TextChanged += (_, e) => _issueText = e.NewTextValue ?? string.Empty;
+        body.Add(_issueEditor);
+        body.Add(OrangeButton("Submit booking", new Command(async () => await SubmitAsync())));
+
+        SetScaffold(new ScrollView { Content = body }, "Home", false);
+    }
+
+    private View BuildBookingPickers()
+    {
+        _motorcyclePicker = new Picker { Title = "Motorcycle" };
+        foreach (var motorcycle in _customer?.Motorcycles ?? [])
+        {
+            _motorcyclePicker.Items.Add($"{motorcycle.Brand} {motorcycle.Model}");
+        }
+        _motorcyclePicker.SelectedIndex = ValidIndex(_selectedMotorcycleIndex, _motorcyclePicker.Items.Count);
+        _motorcyclePicker.SelectedIndexChanged += (_, _) => _selectedMotorcycleIndex = _motorcyclePicker.SelectedIndex;
+
+        _servicePicker = new Picker { Title = "Service" };
+        foreach (var service in _services)
+        {
+            _servicePicker.Items.Add($"{service.ServiceName} - {Money(service.BasePrice)}");
+        }
+        _servicePicker.SelectedIndex = ValidIndex(_selectedServiceIndex, _servicePicker.Items.Count);
+        _servicePicker.SelectedIndexChanged += (_, _) => _selectedServiceIndex = _servicePicker.SelectedIndex;
+
+        _addressPicker = new Picker { Title = "Address" };
+        foreach (var address in _customer?.Addresses ?? [])
+        {
+            _addressPicker.Items.Add($"{address.Label ?? "Address"} - {address.AddressLine}");
+        }
+        _addressPicker.SelectedIndex = ValidIndex(_selectedAddressIndex, _addressPicker.Items.Count);
+        _addressPicker.SelectedIndexChanged += (_, _) => _selectedAddressIndex = _addressPicker.SelectedIndex;
+
+        return Card(new VerticalStackLayout
         {
             Spacing = 10,
             Children =
@@ -1547,25 +1597,47 @@ public sealed class BookServicePage : CustomerPageBase
                 _servicePicker,
                 _addressPicker
             }
-        }));
-        body.Add(_issueEditor);
-        body.Add(OrangeButton("Submit booking", new Command(async () => await SubmitAsync())));
+        });
+    }
 
-        SetScaffold(new ScrollView { Content = body }, "Home", false);
+    private static int ValidIndex(int requestedIndex, int count)
+    {
+        if (count <= 0)
+        {
+            return -1;
+        }
+
+        return Math.Clamp(requestedIndex, 0, count - 1);
     }
 
     private async Task SubmitAsync()
     {
-        if (_customer is null || _servicePicker.SelectedIndex < 0 || _motorcyclePicker.SelectedIndex < 0 || _addressPicker.SelectedIndex < 0)
+        var customer = _customer;
+        var servicePicker = _servicePicker;
+        var motorcyclePicker = _motorcyclePicker;
+        var addressPicker = _addressPicker;
+        var issueEditor = _issueEditor;
+
+        if (customer is null ||
+            servicePicker is null ||
+            motorcyclePicker is null ||
+            addressPicker is null ||
+            issueEditor is null ||
+            servicePicker.SelectedIndex < 0 ||
+            servicePicker.SelectedIndex >= _services.Count ||
+            motorcyclePicker.SelectedIndex < 0 ||
+            motorcyclePicker.SelectedIndex >= customer.Motorcycles.Count ||
+            addressPicker.SelectedIndex < 0 ||
+            addressPicker.SelectedIndex >= customer.Addresses.Count)
         {
             await DisplayAlertAsync("Booking", "Profile, service, motorcycle, and address are required.", "OK");
             return;
         }
 
-        var service = _services[_servicePicker.SelectedIndex];
-        var motorcycle = _customer.Motorcycles[_motorcyclePicker.SelectedIndex];
-        var address = _customer.Addresses[_addressPicker.SelectedIndex];
-        var issue = string.IsNullOrWhiteSpace(_issueEditor.Text) ? service.ServiceDescription ?? service.ServiceName : _issueEditor.Text.Trim();
+        var service = _services[servicePicker.SelectedIndex];
+        var motorcycle = customer.Motorcycles[motorcyclePicker.SelectedIndex];
+        var address = customer.Addresses[addressPicker.SelectedIndex];
+        var issue = string.IsNullOrWhiteSpace(issueEditor.Text) ? service.ServiceDescription ?? service.ServiceName : issueEditor.Text.Trim();
 
         try
         {

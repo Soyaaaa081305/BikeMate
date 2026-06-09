@@ -298,7 +298,11 @@ public sealed class BikeMateDbContext(DbContextOptions<BikeMateDbContext> option
 
         modelBuilder.Entity<ServiceRequest>(entity =>
         {
-            entity.ToTable("service_requests");
+            entity.ToTable("service_requests", table =>
+            {
+                table.HasTrigger("trg_requests_update_completed_jobs");
+                table.HasTrigger("trg_service_request_status_history");
+            });
             entity.HasKey(x => x.RequestId);
             entity.Property(x => x.IssueDescription).IsRequired();
             entity.Property(x => x.ServiceLocationAddress).HasMaxLength(500);
@@ -433,7 +437,7 @@ public sealed class BikeMateDbContext(DbContextOptions<BikeMateDbContext> option
     {
         modelBuilder.Entity<Review>(entity =>
         {
-            entity.ToTable("reviews");
+            entity.ToTable("reviews", table => table.HasTrigger("trg_reviews_update_mechanic_rating"));
             entity.HasKey(x => x.ReviewId);
             entity.HasIndex(x => x.RequestId).IsUnique();
             entity.Property(x => x.CreatedAt).HasDefaultValueSql("SYSUTCDATETIME()");
