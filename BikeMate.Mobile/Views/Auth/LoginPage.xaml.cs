@@ -33,6 +33,7 @@ public partial class LoginPage : ContentPage
     {
         BusyIndicator.IsVisible = true;
         BusyIndicator.IsRunning = true;
+        var navigatedAway = false;
 
         try
         {
@@ -47,6 +48,7 @@ public partial class LoginPage : ContentPage
                     await SecureStorage.Default.SetAsync("access_token", auth.AccessToken);
                     var role = PickPrimaryRole(auth.User.Roles);
                     await SecureStorage.Default.SetAsync("primary_role", role);
+                    navigatedAway = true;
                     await AppNavigation.NavigateByRoleAsync(role);
                     return;
                 }
@@ -57,12 +59,16 @@ public partial class LoginPage : ContentPage
         }
         catch
         {
+            navigatedAway = true;
             await AppNavigation.NavigateByRoleAsync(AppNavigation.InferRoleFromEmail(EmailEntry.Text ?? string.Empty));
         }
         finally
         {
-            BusyIndicator.IsRunning = false;
-            BusyIndicator.IsVisible = false;
+            if (!navigatedAway)
+            {
+                BusyIndicator.IsRunning = false;
+                BusyIndicator.IsVisible = false;
+            }
         }
     }
 

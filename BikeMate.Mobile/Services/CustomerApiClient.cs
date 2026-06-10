@@ -39,6 +39,31 @@ internal static class CustomerApiClient
         return await GetAsync<CustomerMeDto>(http, "customers/me", cancellationToken);
     }
 
+    public static async Task UpdateCustomerAsync(UpsertCustomerProfileDto dto, CancellationToken cancellationToken = default)
+    {
+        using var http = await ApiConfig.CreateAuthorizedHttpClientAsync();
+        using var response = await http.PutAsJsonAsync("customers/me", dto, cancellationToken);
+        await ReadAsync<object>(response, cancellationToken);
+    }
+
+    public static async Task<CustomerAddressDto> UpsertAddressAsync(CustomerAddressDto? existing, UpsertCustomerAddressDto dto, CancellationToken cancellationToken = default)
+    {
+        using var http = await ApiConfig.CreateAuthorizedHttpClientAsync();
+        using var response = existing is null
+            ? await http.PostAsJsonAsync("customers/address", dto, cancellationToken)
+            : await http.PutAsJsonAsync($"customers/address/{existing.AddressId}", dto, cancellationToken);
+        return await ReadAsync<CustomerAddressDto>(response, cancellationToken);
+    }
+
+    public static async Task<MotorcycleDto> UpsertMotorcycleAsync(MotorcycleDto? existing, UpsertMotorcycleDto dto, CancellationToken cancellationToken = default)
+    {
+        using var http = await ApiConfig.CreateAuthorizedHttpClientAsync();
+        using var response = existing is null
+            ? await http.PostAsJsonAsync("customers/motorcycles", dto, cancellationToken)
+            : await http.PutAsJsonAsync($"customers/motorcycles/{existing.MotorcycleId}", dto, cancellationToken);
+        return await ReadAsync<MotorcycleDto>(response, cancellationToken);
+    }
+
     public static async Task<IReadOnlyList<ServiceRequestDto>> GetMyRequestsAsync(CancellationToken cancellationToken = default)
     {
         using var http = await ApiConfig.CreateAuthorizedHttpClientAsync();
@@ -85,6 +110,18 @@ internal static class CustomerApiClient
         return await GetAsync<IReadOnlyList<ShopSummaryDto>>(http, "services/shops", cancellationToken);
     }
 
+    public static async Task<ShopDetailsDto> GetShopDetailsAsync(int shopId, CancellationToken cancellationToken = default)
+    {
+        using var http = ApiConfig.CreateHttpClient();
+        return await GetAsync<ShopDetailsDto>(http, $"shops/{shopId}", cancellationToken);
+    }
+
+    public static async Task<IReadOnlyList<ShopServiceDto>> GetShopServicesAsync(int shopId, CancellationToken cancellationToken = default)
+    {
+        using var http = ApiConfig.CreateHttpClient();
+        return await GetAsync<IReadOnlyList<ShopServiceDto>>(http, $"services/shops/{shopId}/services", cancellationToken);
+    }
+
     public static async Task<IReadOnlyList<ShopServiceDto>> SearchServicesAsync(CancellationToken cancellationToken = default)
     {
         using var http = ApiConfig.CreateHttpClient();
@@ -98,11 +135,59 @@ internal static class CustomerApiClient
         return await ReadAsync<ServiceRequestDto>(response, cancellationToken);
     }
 
+    public static async Task<ServiceRequestDto> SelectShopAsync(int requestId, SelectShopDto dto, CancellationToken cancellationToken = default)
+    {
+        using var http = await ApiConfig.CreateAuthorizedHttpClientAsync();
+        using var response = await http.PutAsJsonAsync($"service-requests/{requestId}/select-shop", dto, cancellationToken);
+        return await ReadAsync<ServiceRequestDto>(response, cancellationToken);
+    }
+
+    public static async Task AttachRequestMediaAsync(int requestId, UploadMediaDto dto, CancellationToken cancellationToken = default)
+    {
+        using var http = await ApiConfig.CreateAuthorizedHttpClientAsync();
+        using var response = await http.PostAsJsonAsync($"service-requests/{requestId}/media", dto, cancellationToken);
+        await ReadAsync<object>(response, cancellationToken);
+    }
+
+    public static async Task<string> CreatePlaceholderFileAsync(UploadMediaDto dto, CancellationToken cancellationToken = default)
+    {
+        using var http = await ApiConfig.CreateAuthorizedHttpClientAsync();
+        using var response = await http.PostAsJsonAsync("files/placeholder", dto, cancellationToken);
+        var payload = await ReadAsync<PlaceholderFileDto>(response, cancellationToken);
+        return payload.Url;
+    }
+
+    public static async Task<LiveLocationDto?> GetLatestRequestLocationAsync(int requestId, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            using var http = await ApiConfig.CreateAuthorizedHttpClientAsync();
+            return await GetAsync<LiveLocationDto>(http, $"location/request/{requestId}/latest", cancellationToken);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    public static async Task<MechanicProfileDto> GetMechanicProfileAsync(int mechanicId, CancellationToken cancellationToken = default)
+    {
+        using var http = ApiConfig.CreateHttpClient();
+        return await GetAsync<MechanicProfileDto>(http, $"mechanics/{mechanicId}", cancellationToken);
+    }
+
     public static async Task<PaymentDto> CreateCheckoutAsync(CreateCheckoutSessionDto dto, CancellationToken cancellationToken = default)
     {
         using var http = await ApiConfig.CreateAuthorizedHttpClientAsync();
         using var response = await http.PostAsJsonAsync("payments/create-checkout-session", dto, cancellationToken);
         return await ReadAsync<PaymentDto>(response, cancellationToken);
+    }
+
+    public static async Task<ReviewDto> SubmitReviewAsync(CreateReviewDto dto, CancellationToken cancellationToken = default)
+    {
+        using var http = await ApiConfig.CreateAuthorizedHttpClientAsync();
+        using var response = await http.PostAsJsonAsync("reviews", dto, cancellationToken);
+        return await ReadAsync<ReviewDto>(response, cancellationToken);
     }
 
     private static async Task<T> GetAsync<T>(HttpClient http, string endpoint, CancellationToken cancellationToken)
@@ -136,3 +221,5 @@ internal sealed record CustomerMeDto(
     string? ProfileImageUrl,
     IReadOnlyList<CustomerAddressDto> Addresses,
     IReadOnlyList<MotorcycleDto> Motorcycles);
+
+internal sealed record PlaceholderFileDto(string Url);

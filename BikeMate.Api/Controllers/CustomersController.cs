@@ -39,11 +39,20 @@ public sealed class CustomersController(BikeMateDbContext db) : ControllerBase
     }
 
     [HttpPut("me")]
-    public async Task<IActionResult> UpdateMe(UserProfileDto dto, CancellationToken cancellationToken)
+    public async Task<IActionResult> UpdateMe(UpsertCustomerProfileDto dto, CancellationToken cancellationToken)
     {
         var user = await db.Users.SingleAsync(x => x.UserId == User.GetUserId(), cancellationToken);
-        user.FirstName = dto.FirstName;
-        user.LastName = dto.LastName;
+        var email = dto.Email.Trim().ToLowerInvariant();
+        if (!string.Equals(user.Email, email, StringComparison.OrdinalIgnoreCase) &&
+            await db.Users.AnyAsync(x => x.Email == email, cancellationToken))
+        {
+            throw new InvalidOperationException("Email is already registered.");
+        }
+
+        user.FirstName = dto.FirstName.Trim();
+        user.LastName = dto.LastName.Trim();
+        user.Email = email;
+        user.PhoneNumber = dto.PhoneNumber;
         user.UpdatedAt = DateTime.UtcNow;
         await db.SaveChangesAsync(cancellationToken);
         return Ok(new { message = "Profile updated." });
@@ -82,6 +91,30 @@ public sealed class CustomersController(BikeMateDbContext db) : ControllerBase
             CreatedAt = DateTime.UtcNow
         };
         db.ClientAddresses.Add(address);
+        await db.SaveChangesAsync(cancellationToken);
+        return Ok(ToAddressDto(address));
+    }
+
+    [HttpPut("address/{id:int}")]
+    public async Task<ActionResult<CustomerAddressDto>> UpdateAddress(int id, UpsertCustomerAddressDto dto, CancellationToken cancellationToken)
+    {
+        var clientId = await GetClientIdAsync(cancellationToken);
+        var address = await db.ClientAddresses.SingleAsync(x => x.AddressId == id && x.ClientId == clientId, cancellationToken);
+        if (dto.IsDefault)
+        {
+            await db.ClientAddresses
+                .Where(x => x.ClientId == clientId && x.AddressId != id)
+                .ExecuteUpdateAsync(x => x.SetProperty(a => a.IsDefault, false), cancellationToken);
+        }
+
+        address.Label = dto.Label;
+        address.AddressLine = dto.AddressLine;
+        address.City = dto.City;
+        address.Province = dto.Province;
+        address.PostalCode = dto.PostalCode;
+        address.Latitude = dto.Latitude;
+        address.Longitude = dto.Longitude;
+        address.IsDefault = dto.IsDefault;
         await db.SaveChangesAsync(cancellationToken);
         return Ok(ToAddressDto(address));
     }

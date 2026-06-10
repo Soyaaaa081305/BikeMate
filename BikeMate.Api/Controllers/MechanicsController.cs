@@ -18,6 +18,14 @@ public sealed class MechanicsController(
     IServiceRequestService serviceRequestService,
     ILocationService locationService) : ControllerBase
 {
+    [HttpGet("{id:int}")]
+    [AllowAnonymous]
+    public async Task<ActionResult<MechanicProfileDto>> GetById(int id, CancellationToken cancellationToken)
+    {
+        var mechanic = await db.Mechanics.Include(x => x.User).SingleAsync(x => x.MechanicId == id, cancellationToken);
+        return Ok(ToProfileDto(mechanic));
+    }
+
     [HttpGet("me")]
     public async Task<ActionResult<MechanicProfileDto>> GetMe(CancellationToken cancellationToken)
     {

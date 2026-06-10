@@ -26,6 +26,12 @@ public sealed record UpsertCustomerAddressDto(
     decimal? Longitude,
     bool IsDefault);
 
+public sealed record UpsertCustomerProfileDto(
+    string FirstName,
+    string LastName,
+    string Email,
+    string? PhoneNumber);
+
 public sealed record MotorcycleDto(
     int MotorcycleId,
     string Brand,
@@ -140,6 +146,7 @@ public sealed record ServiceRequestDto(
 public sealed record UpdateRequestStatusDto(string Status, string? Notes);
 public sealed record AssignMechanicDto(int MechanicId);
 public sealed record UploadMediaDto(string MediaUrl, string MediaType, string? Caption);
+public sealed record SelectShopDto(int ShopId, int? ShopServiceId);
 
 public sealed record MechanicProfileDto(
     int MechanicId,
@@ -188,6 +195,9 @@ public sealed record PaymentDto(
     string? ReferenceNumber,
     DateTime CreatedAt,
     DateTime? PaidAt);
+
+public sealed record CreateReviewDto(int RequestId, int Rating, string? Comment);
+public sealed record ReviewDto(int ReviewId, int RequestId, int MechanicId, int Rating, string? Comment, DateTime CreatedAt);
 
 public sealed record RegisterDeviceTokenDto(string DeviceToken, string Platform);
 

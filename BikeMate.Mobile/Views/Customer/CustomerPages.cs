@@ -120,12 +120,15 @@ public abstract class CustomerPageBase : ContentPage
 
         grid.Add(new Button
         {
-            Text = back ? "<" : string.Empty,
+            Text = back ? "Back" : string.Empty,
             Command = back ? new Command(async () => await Shell.Current.GoToAsync("..")) : null,
             BackgroundColor = Colors.Transparent,
             TextColor = CustomerUi.Dark,
-            FontSize = 22,
-            WidthRequest = 40
+            FontSize = 12,
+            WidthRequest = 56,
+            HeightRequest = 40,
+            CornerRadius = 20,
+            Padding = new Thickness(0)
         }, 0, 0);
 
         grid.Add(new Label
@@ -557,11 +560,11 @@ public sealed class CustomerProfilePage : CustomerPageBase
         });
 
         var fullName = _customer is null ? "Loading..." : $"{_customer.FirstName} {_customer.LastName}";
-        body.Add(Row("Full Name", fullName));
+        body.Add(Row("Full Name", $"{fullName} >", new Command(async () => await EditNameAsync())));
         body.Add(Separator());
         body.Add(Row("Account ID", _customer is null ? "" : $"CUST-{_customer.ClientId:0000}"));
         body.Add(Separator());
-        body.Add(Row("Change Password", ">"));
+        body.Add(Row("Change Password", ">", new Command(async () => await DisplayAlertAsync("Change Password", "Use Forgot Password on the sign-in screen to reset your password.", "OK"))));
         body.Add(Separator());
 
         var quick = new Grid
@@ -577,14 +580,14 @@ public sealed class CustomerProfilePage : CustomerPageBase
         body.Add(quick);
 
         body.Add(new BoxView { HeightRequest = 36, Opacity = 0 });
-        body.Add(Row("Change Mobile\nNo.", string.IsNullOrWhiteSpace(_customer?.PhoneNumber) ? "Not set >" : $"{_customer.PhoneNumber}>"));
+        body.Add(Row("Change Mobile\nNo.", string.IsNullOrWhiteSpace(_customer?.PhoneNumber) ? "Not set >" : $"{_customer.PhoneNumber} >", new Command(async () => await EditPhoneAsync())));
         body.Add(Separator());
-        body.Add(Row("Change Email", _customer is null ? "" : $"{_customer.Email}>"));
+        body.Add(Row("Change Email", _customer is null ? "" : $"{_customer.Email} >", new Command(async () => await EditEmailAsync())));
         body.Add(Separator());
-        body.Add(Row("Default Address", _customer?.Addresses.FirstOrDefault(x => x.IsDefault)?.AddressLine ?? "Not set >"));
+        body.Add(Row("Default Address", $"{_customer?.Addresses.FirstOrDefault(x => x.IsDefault)?.AddressLine ?? "Not set"} >", new Command(async () => await EditAddressAsync())));
         body.Add(Separator());
         var motorcycle = _customer?.Motorcycles.FirstOrDefault();
-        body.Add(Row("Motorcycle", motorcycle is null ? "Not set >" : $"{motorcycle.Brand} {motorcycle.Model}>"));
+        body.Add(Row("Motorcycle", motorcycle is null ? "Not set >" : $"{motorcycle.Brand} {motorcycle.Model} >", new Command(async () => await EditMotorcycleAsync())));
 
         body.Add(new Button
         {
@@ -594,18 +597,168 @@ public sealed class CustomerProfilePage : CustomerPageBase
             CornerRadius = 12,
             HeightRequest = 48,
             FontAttributes = FontAttributes.Bold,
-            Command = new Command(() =>
-            {
-                SecureStorage.Default.Remove("access_token");
-                SecureStorage.Default.Remove("primary_role");
-                if (Application.Current?.Windows.Count > 0)
-                {
-                    Application.Current.Windows[0].Page = new AppShell();
-                }
-            })
+            Command = new Command(async () => await BikeMate.Helpers.AppNavigation.SignOutAsync())
         });
 
         SetScaffold(new ScrollView { Content = body }, "Home", false);
+    }
+
+    private async Task RefreshProfileAsync()
+    {
+        _customer = await CustomerApiClient.GetCustomerAsync();
+        Render();
+    }
+
+    private async Task SaveProfileAsync(string firstName, string lastName, string email, string? phone)
+    {
+        if (_customer is null)
+        {
+            return;
+        }
+
+        await CustomerApiClient.UpdateCustomerAsync(new UpsertCustomerProfileDto(firstName, lastName, email, phone));
+        await RefreshProfileAsync();
+    }
+
+    private async Task EditNameAsync()
+    {
+        if (_customer is null)
+        {
+            return;
+        }
+
+        var value = await DisplayPromptAsync("Full Name", "Enter your full name.", "Save", "Cancel", initialValue: $"{_customer.FirstName} {_customer.LastName}");
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return;
+        }
+
+        var parts = value.Trim().Split(' ', 2, StringSplitOptions.RemoveEmptyEntries);
+        try
+        {
+            await SaveProfileAsync(parts[0], parts.Length > 1 ? parts[1] : _customer.LastName, _customer.Email, _customer.PhoneNumber);
+        }
+        catch (Exception ex)
+        {
+            await DisplayAlertAsync("Profile not saved", ex.Message, "OK");
+        }
+    }
+
+    private async Task EditPhoneAsync()
+    {
+        if (_customer is null)
+        {
+            return;
+        }
+
+        var value = await DisplayPromptAsync("Mobile Number", "Enter your mobile number.", "Save", "Cancel", keyboard: Keyboard.Telephone, initialValue: _customer.PhoneNumber ?? "");
+        if (value is null)
+        {
+            return;
+        }
+
+        try
+        {
+            await SaveProfileAsync(_customer.FirstName, _customer.LastName, _customer.Email, string.IsNullOrWhiteSpace(value) ? null : value.Trim());
+        }
+        catch (Exception ex)
+        {
+            await DisplayAlertAsync("Profile not saved", ex.Message, "OK");
+        }
+    }
+
+    private async Task EditEmailAsync()
+    {
+        if (_customer is null)
+        {
+            return;
+        }
+
+        var value = await DisplayPromptAsync("Email", "Enter your email address.", "Save", "Cancel", keyboard: Keyboard.Email, initialValue: _customer.Email);
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return;
+        }
+
+        try
+        {
+            await SaveProfileAsync(_customer.FirstName, _customer.LastName, value.Trim(), _customer.PhoneNumber);
+        }
+        catch (Exception ex)
+        {
+            await DisplayAlertAsync("Profile not saved", ex.Message, "OK");
+        }
+    }
+
+    private async Task EditAddressAsync()
+    {
+        if (_customer is null)
+        {
+            return;
+        }
+
+        var existing = _customer.Addresses.FirstOrDefault(x => x.IsDefault) ?? _customer.Addresses.FirstOrDefault();
+        var value = await DisplayPromptAsync("Default Address", "Enter your service address.", "Save", "Cancel", initialValue: existing?.AddressLine ?? "");
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return;
+        }
+
+        try
+        {
+            await CustomerApiClient.UpsertAddressAsync(existing, new UpsertCustomerAddressDto(
+                existing?.Label ?? "Home",
+                value.Trim(),
+                existing?.City,
+                existing?.Province,
+                null,
+                existing?.Latitude,
+                existing?.Longitude,
+                true));
+            await RefreshProfileAsync();
+        }
+        catch (Exception ex)
+        {
+            await DisplayAlertAsync("Address not saved", ex.Message, "OK");
+        }
+    }
+
+    private async Task EditMotorcycleAsync()
+    {
+        if (_customer is null)
+        {
+            return;
+        }
+
+        var existing = _customer.Motorcycles.FirstOrDefault();
+        var brand = await DisplayPromptAsync("Bike Brand", "Enter bike brand.", "Next", "Cancel", initialValue: existing?.Brand ?? "");
+        if (string.IsNullOrWhiteSpace(brand))
+        {
+            return;
+        }
+
+        var model = await DisplayPromptAsync("Bike Model", "Enter bike model.", "Save", "Cancel", initialValue: existing?.Model ?? "");
+        if (string.IsNullOrWhiteSpace(model))
+        {
+            return;
+        }
+
+        try
+        {
+            await CustomerApiClient.UpsertMotorcycleAsync(existing, new UpsertMotorcycleDto(
+                brand.Trim(),
+                model.Trim(),
+                existing?.YearModel,
+                existing?.PlateNumber,
+                existing?.EngineType,
+                existing?.Color,
+                null));
+            await RefreshProfileAsync();
+        }
+        catch (Exception ex)
+        {
+            await DisplayAlertAsync("Motorcycle not saved", ex.Message, "OK");
+        }
     }
 }
 
@@ -804,7 +957,18 @@ public sealed class CustomerMessagesPage : CustomerPageBase
                 new ColumnDefinition(GridLength.Auto)
             }
         };
-        header.Add(new Button { Text = "<", BackgroundColor = Colors.Transparent, TextColor = CustomerUi.Dark, FontSize = 22 }, 0, 0);
+        header.Add(new Button
+        {
+            Text = "Back",
+            BackgroundColor = Colors.Transparent,
+            TextColor = CustomerUi.Dark,
+            FontSize = 12,
+            WidthRequest = 56,
+            HeightRequest = 40,
+            CornerRadius = 20,
+            Padding = new Thickness(0),
+            Command = new Command(async () => await Shell.Current.GoToAsync("//CustomerHomePage"))
+        }, 0, 0);
         header.Add(Label("Messages", 28, CustomerUi.Orange, FontAttributes.Bold), 1, 0);
         header.Add(new Entry { Placeholder = "Search...", FontSize = 11, WidthRequest = 110, BackgroundColor = Color.FromArgb("#EFEFEF") }, 2, 0);
         body.Add(header);
@@ -953,10 +1117,14 @@ public sealed class CustomerChatPage : CustomerPageBase, IQueryAttributable
 
         grid.Add(new Button
         {
-            Text = "<",
+            Text = "Back",
             BackgroundColor = Colors.Transparent,
             TextColor = CustomerUi.Dark,
-            FontSize = 22,
+            FontSize = 12,
+            WidthRequest = 56,
+            HeightRequest = 40,
+            CornerRadius = 20,
+            Padding = new Thickness(0),
             Command = new Command(async () =>
             {
                 if (Shell.Current.Navigation.NavigationStack.Count > 1)
@@ -1206,7 +1374,11 @@ public sealed class PaymentOptionsPage : CustomerPageBase
     public PaymentOptionsPage()
     {
         Title = "Payments";
+        Render();
+    }
 
+    private void Render()
+    {
         var body = new VerticalStackLayout { Spacing = 0, BackgroundColor = CustomerUi.Page };
         body.Add(Header("Payments"));
         body.Add(SectionHeader("PREFERRED PAYMENT"));
@@ -1224,7 +1396,16 @@ public sealed class PaymentOptionsPage : CustomerPageBase
         body.Add(new VerticalStackLayout
         {
             Padding = new Thickness(14, 16),
-            Children = { OrangeButton("Continue", new Command(async () => await Shell.Current.GoToAsync(nameof(PaymentCheckoutPage)))) }
+            Children =
+            {
+                OrangeButton("Continue", new Command(async () =>
+                {
+                    var route = BookingDraft.RequestId > 0
+                        ? $"{nameof(PaymentCheckoutPage)}?requestId={BookingDraft.RequestId}"
+                        : nameof(PaymentCheckoutPage);
+                    await Shell.Current.GoToAsync(route);
+                }))
+            }
         });
 
         SetScaffold(new ScrollView { Content = body }, "Payments", false);
@@ -1243,20 +1424,31 @@ public sealed class PaymentOptionsPage : CustomerPageBase
         };
     }
 
-    private static View OptionRow(string name, string note)
+    private View OptionRow(string name, string note)
     {
+        var selected = string.Equals(BookingDraft.PaymentMethod, name, StringComparison.OrdinalIgnoreCase);
         var grid = new Grid
         {
-            BackgroundColor = Colors.White,
+            BackgroundColor = selected ? Color.FromArgb("#FFF2EC") : Colors.White,
             Padding = new Thickness(16, 12),
             ColumnDefinitions =
             {
+                new ColumnDefinition(GridLength.Auto),
                 new ColumnDefinition(GridLength.Star),
                 new ColumnDefinition(GridLength.Auto)
             }
         };
-        grid.Add(Label(name, 12, CustomerUi.Dark, FontAttributes.Bold), 0, 0);
-        grid.Add(Label(note, 10, CustomerUi.Orange), 1, 0);
+        grid.Add(Label(selected ? "[x]" : "[ ]", 11, CustomerUi.Orange, FontAttributes.Bold), 0, 0);
+        grid.Add(Label(name, 12, CustomerUi.Dark, FontAttributes.Bold), 1, 0);
+        grid.Add(Label(note, 10, CustomerUi.Orange), 2, 0);
+        grid.GestureRecognizers.Add(new TapGestureRecognizer
+        {
+            Command = new Command(() =>
+            {
+                BookingDraft.PaymentMethod = name;
+                Render();
+            })
+        });
         return grid;
     }
 }
@@ -1264,8 +1456,10 @@ public sealed class PaymentOptionsPage : CustomerPageBase
 public sealed class PaymentCheckoutPage : CustomerPageBase, IQueryAttributable
 {
     private int _paymentId;
+    private int _requestId;
     private PaymentDto? _payment;
     private ServiceRequestDto? _request;
+    private bool _fromBookingFlow;
 
     public PaymentCheckoutPage()
     {
@@ -1280,6 +1474,13 @@ public sealed class PaymentCheckoutPage : CustomerPageBase, IQueryAttributable
         {
             _paymentId = paymentId;
         }
+
+        if (query.TryGetValue("requestId", out var requestValue) &&
+            int.TryParse(Uri.UnescapeDataString(requestValue?.ToString() ?? ""), out var requestId))
+        {
+            _requestId = requestId;
+            _fromBookingFlow = true;
+        }
     }
 
     protected override async void OnAppearing()
@@ -1288,11 +1489,34 @@ public sealed class PaymentCheckoutPage : CustomerPageBase, IQueryAttributable
         try
         {
             var payments = await CustomerApiClient.GetPaymentHistoryAsync();
-            _payment = _paymentId > 0 ? payments.FirstOrDefault(x => x.PaymentId == _paymentId) : payments.OrderByDescending(x => x.CreatedAt).FirstOrDefault();
+            _requestId = _requestId > 0 ? _requestId : BookingDraft.RequestId;
+            _fromBookingFlow = _fromBookingFlow || BookingDraft.RequestId > 0;
+
+            if (_paymentId > 0)
+            {
+                _payment = payments.FirstOrDefault(x => x.PaymentId == _paymentId);
+            }
+            else if (_requestId > 0)
+            {
+                _payment = payments.OrderByDescending(x => x.CreatedAt).FirstOrDefault(x => x.RequestId == _requestId);
+                _request = await CustomerApiClient.GetRequestAsync(_requestId);
+                if (_payment is null)
+                {
+                    var amount = _request.FinalTotal > 0 ? _request.FinalTotal : _request.EstimatedTotal;
+                    _payment = await CustomerApiClient.CreateCheckoutAsync(new CreateCheckoutSessionDto(_requestId, amount));
+                }
+            }
+            else
+            {
+                _payment = payments.OrderByDescending(x => x.CreatedAt).FirstOrDefault();
+            }
+
             if (_payment is not null)
             {
                 _paymentId = _payment.PaymentId;
-                _request = await CustomerApiClient.GetRequestAsync(_payment.RequestId);
+                _requestId = _payment.RequestId;
+                BookingDraft.PaymentId = _payment.PaymentId;
+                _request ??= await CustomerApiClient.GetRequestAsync(_payment.RequestId);
             }
 
             Render();
@@ -1305,8 +1529,17 @@ public sealed class PaymentCheckoutPage : CustomerPageBase, IQueryAttributable
 
     private void Render(string? banner = null)
     {
-        var amount = _payment?.Amount ?? 0m;
-        var service = _request?.ServiceName ?? (_payment is null ? "No payment selected" : $"Request #{_payment.RequestId}");
+        var selectedService = BookingDraft.SelectedService();
+        var amount = _payment?.Amount
+            ?? (_request is null ? selectedService?.BasePrice ?? 0m : _request.FinalTotal > 0 ? _request.FinalTotal : _request.EstimatedTotal);
+        var service = _request?.ServiceName
+            ?? selectedService?.ServiceName
+            ?? (_payment is null ? "No payment selected" : $"Request #{_payment.RequestId}");
+        var issue = _request?.IssueDescription ?? $"{BookingDraft.ProblemCategory}: {BookingDraft.OtherDetails}";
+        var location = _request?.ServiceLocationAddress ?? BookingDraft.ConfirmationAddress();
+        var schedule = _request?.ScheduledAt?.ToLocalTime() ?? BookingDraft.ScheduledAt;
+        var bookingStatus = _request is null ? "pending" : FormatStatus(_request.CurrentStatus);
+        var paymentStatus = _payment is null ? "Unpaid" : FormatStatus(_payment.Status);
 
         var body = new VerticalStackLayout { Spacing = 12 };
         body.Add(new Grid
@@ -1317,7 +1550,7 @@ public sealed class PaymentCheckoutPage : CustomerPageBase, IQueryAttributable
             {
                 new Label
                 {
-                    Text = $"Payment Details\n1 item to pay: {Money(amount)}",
+                    Text = $"Payment Details\n{bookingStatus} • 1 item to pay: {Money(amount)}",
                     TextColor = Colors.White,
                     HorizontalTextAlignment = TextAlignment.Center,
                     FontAttributes = FontAttributes.Bold,
@@ -1337,15 +1570,31 @@ public sealed class PaymentCheckoutPage : CustomerPageBase, IQueryAttributable
         content.Add(Label(service, 12, CustomerUi.Dark));
         content.Add(Label("Repair Summary", 13, CustomerUi.Dark, FontAttributes.Bold));
         content.Add(Row("Item", service));
-        content.Add(Row("Repair Type", _request?.IssueDescription ?? "Service request"));
-        content.Add(Row("Service Date", _request?.ScheduledAt?.ToLocalTime().ToString("MMMM d, yyyy", CultureInfo.InvariantCulture) ?? "Not scheduled"));
+        content.Add(Row("Repair Type", issue));
+        content.Add(Row("Service Type", BookingDraft.ServiceType));
+        content.Add(Row("Bike", $"{BookingDraft.Brand} {BookingDraft.Model}"));
+        content.Add(Row("Location", location));
+        content.Add(Row("Service Date", schedule.ToString("MMMM d, yyyy", CultureInfo.InvariantCulture)));
+        content.Add(Row("Service Time", schedule.ToString("h:mm tt", CultureInfo.InvariantCulture)));
         content.Add(Row("Technician", _request?.MechanicName ?? "Not assigned"));
+        content.Add(Row("Booking Status", bookingStatus));
         content.Add(Separator());
-        content.Add(Row("Provider", _payment?.ProviderName ?? "Pending"));
+        content.Add(Row("Payment Method", BookingDraft.PaymentMethod));
+        content.Add(Row("Provider", _payment?.ProviderName ?? BookingDraft.PaymentMethod));
         content.Add(Row("Reference", _payment?.ReferenceNumber ?? $"BM-PAY-{_paymentId:0000}"));
-        content.Add(Row("Status", _payment is null ? "" : FormatStatus(_payment.Status)));
+        content.Add(Row("Payment Status", paymentStatus));
         content.Add(Row("Total", Money(amount)));
-        content.Add(OrangeButton("Continue", new Command(async () => await Shell.Current.GoToAsync($"{nameof(PaymentReceiptPage)}?paymentId={_paymentId}"))));
+        content.Add(OrangeButton(_fromBookingFlow ? "Proceed to Booking" : "Continue", new Command(async () =>
+        {
+            if (_fromBookingFlow)
+            {
+                await Shell.Current.GoToAsync(nameof(BookingSearchShopPage));
+            }
+            else
+            {
+                await Shell.Current.GoToAsync($"{nameof(PaymentReceiptPage)}?paymentId={_paymentId}");
+            }
+        })));
         body.Add(content);
 
         SetScaffold(new ScrollView { Content = body }, "Payments", false);
@@ -1507,18 +1756,12 @@ public sealed class BookServicePage : CustomerPageBase
 {
     private CustomerMeDto? _customer;
     private IReadOnlyList<ShopServiceDto> _services = [];
-    private Picker? _motorcyclePicker;
-    private Picker? _servicePicker;
-    private Picker? _addressPicker;
-    private Editor? _issueEditor;
-    private int _selectedMotorcycleIndex;
-    private int _selectedServiceIndex;
-    private int _selectedAddressIndex;
-    private string _issueText = string.Empty;
+    private Editor? _addressEditor;
 
     public BookServicePage()
     {
-        Title = "Book Service";
+        Title = "Book Now";
+        BookingDraft.Reset();
         Render("Loading booking data...");
     }
 
@@ -1529,6 +1772,8 @@ public sealed class BookServicePage : CustomerPageBase
         {
             _customer = await CustomerApiClient.GetCustomerAsync();
             _services = await CustomerApiClient.SearchServicesAsync();
+            BookingDraft.ApplyCustomer(_customer);
+            BookingDraft.Services = _services;
             Render();
         }
         catch (Exception ex)
@@ -1539,124 +1784,92 @@ public sealed class BookServicePage : CustomerPageBase
 
     private void Render(string? banner = null)
     {
-        var body = new VerticalStackLayout { Padding = new Thickness(18), Spacing = 14 };
-        body.Add(Header("Book Service"));
-        body.Add(Label("Choose your repair details", 20, CustomerUi.Dark, FontAttributes.Bold));
+        var body = new VerticalStackLayout { Padding = new Thickness(14, 0, 14, 16), Spacing = 8 };
+        body.Add(BookingVisuals.FlowHeader("Book Now!"));
         if (!string.IsNullOrWhiteSpace(banner))
         {
-            body.Add(Card(Label(banner, 11, CustomerUi.Muted), Colors.White, 8, new Thickness(12)));
+            body.Add(BookingVisuals.WhiteCard(Label(banner, 11, CustomerUi.Muted), 6, new Thickness(10)));
         }
 
-        body.Add(BuildBookingPickers());
-        _issueEditor = new Editor
+        body.Add(BookingVisuals.MapPanel(210, true));
+        body.Add(BookingVisuals.FieldRow("Region / Main Area", BookingDraft.Region, new Command(async () => await SelectRegionAsync())));
+        body.Add(BookingVisuals.FieldRow("Your Location", BookingDraft.LocationName, new Command(async () => await SelectLocationAsync())));
+
+        _addressEditor = new Editor
         {
-            Text = _issueText,
-            Placeholder = "Describe the issue",
-            HeightRequest = 120,
-            BackgroundColor = Color.FromArgb("#F1F1F1")
+            Text = BookingDraft.AddressLine,
+            Placeholder = "Address *",
+            HeightRequest = 78,
+            FontSize = 11,
+            TextColor = CustomerUi.Dark,
+            PlaceholderColor = CustomerUi.Orange,
+            BackgroundColor = Colors.Transparent
         };
-        _issueEditor.TextChanged += (_, e) => _issueText = e.NewTextValue ?? string.Empty;
-        body.Add(_issueEditor);
-        body.Add(OrangeButton("Submit booking", new Command(async () => await SubmitAsync())));
+        _addressEditor.TextChanged += (_, e) => BookingDraft.AddressLine = e.NewTextValue ?? string.Empty;
+        body.Add(BookingVisuals.WhiteCard(_addressEditor, 4, new Thickness(8)));
+        body.Add(new BoxView { HeightRequest = 12, Opacity = 0 });
+        body.Add(BookingVisuals.PrimaryButton("Continue", new Command(async () => await ContinueAsync())));
 
         SetScaffold(new ScrollView { Content = body }, "Home", false);
     }
 
-    private View BuildBookingPickers()
+    public void RefreshLocationUi()
     {
-        _motorcyclePicker = new Picker { Title = "Motorcycle" };
-        foreach (var motorcycle in _customer?.Motorcycles ?? [])
-        {
-            _motorcyclePicker.Items.Add($"{motorcycle.Brand} {motorcycle.Model}");
-        }
-        _motorcyclePicker.SelectedIndex = ValidIndex(_selectedMotorcycleIndex, _motorcyclePicker.Items.Count);
-        _motorcyclePicker.SelectedIndexChanged += (_, _) => _selectedMotorcycleIndex = _motorcyclePicker.SelectedIndex;
+        Render();
+    }
 
-        _servicePicker = new Picker { Title = "Service" };
-        foreach (var service in _services)
+    private async Task SelectRegionAsync()
+    {
+        var selected = await BookingOptionSheet.ShowAsync(
+            "Select Region / Main Area",
+            ["Baguio", "Cagayan de Oro", "Cebu", "Mega Manila", "Naga and Legazpi", "Central Luzon"],
+            BookingDraft.Region);
+        if (!string.IsNullOrWhiteSpace(selected))
         {
-            _servicePicker.Items.Add($"{service.ServiceName} - {Money(service.BasePrice)}");
+            BookingDraft.Region = selected;
+            Render();
         }
-        _servicePicker.SelectedIndex = ValidIndex(_selectedServiceIndex, _servicePicker.Items.Count);
-        _servicePicker.SelectedIndexChanged += (_, _) => _selectedServiceIndex = _servicePicker.SelectedIndex;
+    }
 
-        _addressPicker = new Picker { Title = "Address" };
-        foreach (var address in _customer?.Addresses ?? [])
+    private async Task SelectLocationAsync()
+    {
+        var selected = await BookingOptionSheet.ShowAsync(
+            "Select Location",
+            ["Makati Ave, Mega Manila", "San Pedro, Laguna", "Pasig City", "Quezon City", "Use current location"],
+            BookingDraft.LocationName);
+        if (!string.IsNullOrWhiteSpace(selected))
         {
-            _addressPicker.Items.Add($"{address.Label ?? "Address"} - {address.AddressLine}");
-        }
-        _addressPicker.SelectedIndex = ValidIndex(_selectedAddressIndex, _addressPicker.Items.Count);
-        _addressPicker.SelectedIndexChanged += (_, _) => _selectedAddressIndex = _addressPicker.SelectedIndex;
-
-        return Card(new VerticalStackLayout
-        {
-            Spacing = 10,
-            Children =
+            if (selected == "Use current location")
             {
-                _motorcyclePicker,
-                _servicePicker,
-                _addressPicker
+                await BookingVisuals.UpdateCurrentLocationAsync(this);
             }
-        });
-    }
-
-    private static int ValidIndex(int requestedIndex, int count)
-    {
-        if (count <= 0)
-        {
-            return -1;
+            else
+            {
+                BookingDraft.SetManualLocation(selected);
+            }
+            Render();
         }
-
-        return Math.Clamp(requestedIndex, 0, count - 1);
     }
 
-    private async Task SubmitAsync()
+    private async Task ContinueAsync()
     {
-        var customer = _customer;
-        var servicePicker = _servicePicker;
-        var motorcyclePicker = _motorcyclePicker;
-        var addressPicker = _addressPicker;
-        var issueEditor = _issueEditor;
+        BookingDraft.Customer = _customer ?? BookingDraft.Customer;
+        BookingDraft.Services = _services.Count == 0 ? BookingDraft.Services : _services;
+        BookingDraft.AddressLine = _addressEditor?.Text?.Trim() ?? BookingDraft.AddressLine;
 
-        if (customer is null ||
-            servicePicker is null ||
-            motorcyclePicker is null ||
-            addressPicker is null ||
-            issueEditor is null ||
-            servicePicker.SelectedIndex < 0 ||
-            servicePicker.SelectedIndex >= _services.Count ||
-            motorcyclePicker.SelectedIndex < 0 ||
-            motorcyclePicker.SelectedIndex >= customer.Motorcycles.Count ||
-            addressPicker.SelectedIndex < 0 ||
-            addressPicker.SelectedIndex >= customer.Addresses.Count)
+        if (string.IsNullOrWhiteSpace(BookingDraft.AddressLine))
         {
-            await DisplayAlertAsync("Booking", "Profile, service, motorcycle, and address are required.", "OK");
+            await DisplayAlertAsync("Location required", "Please enter the service address.", "OK");
             return;
         }
 
-        var service = _services[servicePicker.SelectedIndex];
-        var motorcycle = customer.Motorcycles[motorcyclePicker.SelectedIndex];
-        var address = customer.Addresses[addressPicker.SelectedIndex];
-        var issue = string.IsNullOrWhiteSpace(issueEditor.Text) ? service.ServiceDescription ?? service.ServiceName : issueEditor.Text.Trim();
-
-        try
+        if (BookingDraft.Customer is null)
         {
-            var request = await CustomerApiClient.CreateRequestAsync(new CreateServiceRequestDto(
-                service.ShopId,
-                service.ShopServiceId,
-                motorcycle.MotorcycleId,
-                issue,
-                address.AddressLine,
-                address.Latitude,
-                address.Longitude,
-                DateTime.UtcNow.AddHours(2)));
+            await DisplayAlertAsync("Profile required", "Connect the API or login as a customer before booking.", "OK");
+            return;
+        }
 
-            await Shell.Current.GoToAsync($"{nameof(BookingDetailsPage)}?requestId={request.RequestId}");
-        }
-        catch (Exception ex)
-        {
-            await DisplayAlertAsync("Booking failed", ex.Message, "OK");
-        }
+        await Shell.Current.GoToAsync(nameof(BookingFillUpPage));
     }
 }
 
@@ -1788,7 +2001,10 @@ public sealed class TrackMechanicPage : CustomerPageBase, IQueryAttributable
                 Label("Live map coordinates can be attached here from the locations endpoint.", 12, CustomerUi.Muted)
             }
         }));
-        body.Add(OrangeButton("Open in Google Maps"));
+        body.Add(OrangeButton("Open in Google Maps", new Command(async () =>
+        {
+            await BookingVisuals.OpenGoogleMapsAsync(_request?.ServiceLocationAddress ?? BookingDraft.ConfirmationAddress());
+        })));
 
         SetScaffold(new ScrollView { Content = body }, "Schedule", false);
     }

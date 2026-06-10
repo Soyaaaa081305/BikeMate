@@ -74,6 +74,35 @@ public sealed class ServiceRequestsController(BikeMateDbContext db, IServiceRequ
         return Ok(new { message = "Media attached." });
     }
 
+    [HttpPut("{id:int}/select-shop")]
+    [Authorize(Roles = AppRoles.Customer)]
+    public async Task<ActionResult<ServiceRequestDto>> SelectShop(int id, SelectShopDto dto, CancellationToken cancellationToken)
+    {
+        var userId = User.GetUserId();
+        var request = await db.ServiceRequests
+            .Include(x => x.Client)
+            .SingleAsync(x => x.RequestId == id && x.Client!.UserId == userId, cancellationToken);
+
+        request.ShopId = dto.ShopId;
+        request.ShopServiceId = dto.ShopServiceId ?? request.ShopServiceId;
+        if (request.ShopServiceId is not null)
+        {
+            request.EstimatedTotal = await db.ShopServices
+                .Where(x => x.ShopServiceId == request.ShopServiceId)
+                .Select(x => x.BasePrice)
+                .SingleAsync(cancellationToken);
+        }
+
+        var mechanicId = await db.ShopMechanics
+            .Where(x => x.ShopId == dto.ShopId && x.IsActive)
+            .Select(x => (int?)x.MechanicId)
+            .FirstOrDefaultAsync(cancellationToken);
+        request.MechanicId = mechanicId ?? request.MechanicId;
+
+        await db.SaveChangesAsync(cancellationToken);
+        return Ok(await serviceRequestService.UpdateStatusAsync(id, request.MechanicId is null ? "pending" : "accepted", userId, "Customer selected repair shop.", cancellationToken));
+    }
+
     [HttpGet("upcoming")]
     [Authorize(Roles = AppRoles.Customer)]
     public async Task<ActionResult<IReadOnlyCollection<ServiceRequestDto>>> Upcoming(CancellationToken cancellationToken)
