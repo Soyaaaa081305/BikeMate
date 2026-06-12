@@ -1,8 +1,10 @@
+using BikeMate.Api.Hubs;
 using BikeMate.Api.Services;
 using BikeMate.Core.DTOs;
 using BikeMate.Infrastructure.Data;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
 
 namespace BikeMate.Api.Controllers;
@@ -10,12 +12,22 @@ namespace BikeMate.Api.Controllers;
 [ApiController]
 [Route("api/location")]
 [Authorize]
-public sealed class LocationsController(BikeMateDbContext db, ILocationService locationService) : ControllerBase
+public sealed class LocationsController(
+    BikeMateDbContext db,
+    ILocationService locationService,
+    IHubContext<LocationHub> locationHub) : ControllerBase
 {
     [HttpPost("update")]
     public async Task<ActionResult<LiveLocationDto>> Update(LocationUpdateDto dto, CancellationToken cancellationToken)
     {
-        return Ok(await locationService.UpdateAsync(dto, cancellationToken));
+        var location = await locationService.UpdateAsync(dto, cancellationToken);
+        if (location.RequestId is not null)
+        {
+            await locationHub.Clients.Group(BookingHub.GetRequestGroup(location.RequestId.Value))
+                .SendAsync("MechanicLocationUpdated", location, cancellationToken);
+        }
+
+        return Ok(location);
     }
 
     [HttpGet("request/{requestId:int}/latest")]

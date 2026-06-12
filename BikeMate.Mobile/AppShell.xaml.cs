@@ -31,6 +31,11 @@
             Routing.RegisterRoute(nameof(Views.Customer.PaymentReceiptPage), typeof(Views.Customer.PaymentReceiptPage));
             Routing.RegisterRoute(nameof(Views.Customer.PaymentInvoicePage), typeof(Views.Customer.PaymentInvoicePage));
             Routing.RegisterRoute(nameof(Views.Customer.PaymentOptionsPage), typeof(Views.Customer.PaymentOptionsPage));
+            Routing.RegisterRoute(nameof(Views.Customer.Emergency.EmergencySosPage), typeof(Views.Customer.Emergency.EmergencySosPage));
+            Routing.RegisterRoute(nameof(Views.Customer.Emergency.CallingEmergencyPage), typeof(Views.Customer.Emergency.CallingEmergencyPage));
+            Routing.RegisterRoute(nameof(Views.Customer.Emergency.EmergencyLiveCallPage), typeof(Views.Customer.Emergency.EmergencyLiveCallPage));
+            Routing.RegisterRoute(nameof(Views.Customer.Emergency.EmergencyLocationPickerPage), typeof(Views.Customer.Emergency.EmergencyLocationPickerPage));
+            Routing.RegisterRoute(nameof(Views.Customer.Emergency.ActiveEmergencyTrackingPage), typeof(Views.Customer.Emergency.ActiveEmergencyTrackingPage));
         }
     }
 }

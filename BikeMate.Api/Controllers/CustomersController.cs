@@ -1,4 +1,5 @@
 using BikeMate.Api.Helpers;
+using BikeMate.Api.Services;
 using BikeMate.Core.Constants;
 using BikeMate.Core.DTOs;
 using BikeMate.Core.Entities;
@@ -56,6 +57,123 @@ public sealed class CustomersController(BikeMateDbContext db) : ControllerBase
         user.UpdatedAt = DateTime.UtcNow;
         await db.SaveChangesAsync(cancellationToken);
         return Ok(new { message = "Profile updated." });
+    }
+
+    [HttpGet("dashboard")]
+    public async Task<IActionResult> Dashboard(CancellationToken cancellationToken)
+    {
+        var userId = User.GetUserId();
+        var customer = await db.Clients
+            .Include(x => x.User)
+            .Include(x => x.Addresses)
+            .Include(x => x.Motorcycles)
+            .SingleAsync(x => x.UserId == userId, cancellationToken);
+
+        var activeStatuses = new[] { "pending", "emergency_pending", "searching_responder", "accepted", "en_route", "arrived", "in_progress", "call_connecting" };
+        var activeBooking = await db.ServiceRequests
+            .Include(x => x.CurrentStatus)
+            .Include(x => x.Client).ThenInclude(x => x!.User)
+            .Include(x => x.Mechanic).ThenInclude(x => x!.User)
+            .Include(x => x.Shop)
+            .Include(x => x.ShopService)
+            .Where(x => x.ClientId == customer.ClientId && activeStatuses.Contains(x.CurrentStatus!.StatusName))
+            .OrderByDescending(x => x.CreatedAt)
+            .Select(ServiceRequestService.ToDtoExpression())
+            .FirstOrDefaultAsync(cancellationToken);
+
+        var upcoming = await db.ServiceRequests
+            .Include(x => x.CurrentStatus)
+            .Include(x => x.Client).ThenInclude(x => x!.User)
+            .Include(x => x.Mechanic).ThenInclude(x => x!.User)
+            .Include(x => x.Shop)
+            .Include(x => x.ShopService)
+            .Where(x => x.ClientId == customer.ClientId &&
+                        x.ScheduledAt >= DateTime.UtcNow &&
+                        x.CurrentStatus!.StatusName != "completed" &&
+                        x.CurrentStatus.StatusName != "cancelled")
+            .OrderBy(x => x.ScheduledAt)
+            .Select(ServiceRequestService.ToDtoExpression())
+            .FirstOrDefaultAsync(cancellationToken);
+
+        var recentHistory = await db.ServiceRequests
+            .Include(x => x.CurrentStatus)
+            .Include(x => x.Client).ThenInclude(x => x!.User)
+            .Include(x => x.Mechanic).ThenInclude(x => x!.User)
+            .Include(x => x.Shop)
+            .Include(x => x.ShopService)
+            .Where(x => x.ClientId == customer.ClientId &&
+                        (x.CurrentStatus!.StatusName == "completed" ||
+                         x.CurrentStatus.StatusName == "cancelled" ||
+                         x.CurrentStatus.StatusName == "rejected"))
+            .OrderByDescending(x => x.CreatedAt)
+            .Take(5)
+            .Select(ServiceRequestService.ToDtoExpression())
+            .ToArrayAsync(cancellationToken);
+
+        var categories = await db.ServiceCategories
+            .Where(x => x.IsActive)
+            .OrderBy(x => x.CategoryName)
+            .Select(x => new ServiceCategoryDto(x.CategoryId, x.CategoryName, x.Description))
+            .ToArrayAsync(cancellationToken);
+        var shops = await db.Shops
+            .Where(x => x.ShopStatus == "verified")
+            .OrderBy(x => x.ShopName)
+            .Take(5)
+            .Select(x => new ShopSummaryDto(x.ShopId, x.ShopName, x.AddressLine, x.City, x.ContactNumber, x.ShopStatus, x.Latitude, x.Longitude))
+            .ToArrayAsync(cancellationToken);
+        var mechanics = await db.Mechanics
+            .Include(x => x.User)
+            .Where(x => x.AvailabilityStatus != "offline")
+            .OrderByDescending(x => x.AverageRating)
+            .Take(5)
+            .Select(x => new MechanicProfileDto(x.MechanicId, x.User!.FirstName + " " + x.User.LastName, x.Bio, x.YearsExperience, x.IsVerified, x.AvailabilityStatus, x.AverageRating, x.TotalCompletedJobs))
+            .ToArrayAsync(cancellationToken);
+
+        return Ok(new
+        {
+            Profile = new
+            {
+                customer.ClientId,
+                customer.UserId,
+                customer.User!.FirstName,
+                customer.User.LastName,
+                customer.User.Email,
+                customer.User.PhoneNumber,
+                customer.User.ProfileImageUrl
+            },
+            DefaultAddress = customer.Addresses.OrderByDescending(x => x.IsDefault).Select(ToAddressDto).FirstOrDefault(),
+            Motorcycles = customer.Motorcycles.Select(ToMotorcycleDto),
+            ActiveBooking = activeBooking,
+            UpcomingBooking = upcoming,
+            ServiceCategories = categories,
+            NearbyMechanics = mechanics,
+            NearbyShops = shops,
+            RecentHistory = recentHistory,
+            UnreadNotifications = await db.Notifications.CountAsync(x => x.UserId == userId && !x.IsRead, cancellationToken),
+            UnreadMessages = await db.ConversationParticipants.CountAsync(x => x.UserId == userId && x.LastReadAt == null, cancellationToken)
+        });
+    }
+
+    [HttpGet("home-status")]
+    public async Task<IActionResult> HomeStatus(CancellationToken cancellationToken)
+    {
+        var userId = User.GetUserId();
+        var clientId = await GetClientIdAsync(cancellationToken);
+        return Ok(new
+        {
+            ActiveBookings = await db.ServiceRequests.CountAsync(x =>
+                x.ClientId == clientId &&
+                x.CurrentStatus!.StatusName != "completed" &&
+                x.CurrentStatus.StatusName != "cancelled" &&
+                x.CurrentStatus.StatusName != "rejected", cancellationToken),
+            UpcomingSchedules = await db.ServiceRequests.CountAsync(x =>
+                x.ClientId == clientId &&
+                x.ScheduledAt >= DateTime.UtcNow &&
+                x.CurrentStatus!.StatusName != "completed" &&
+                x.CurrentStatus.StatusName != "cancelled", cancellationToken),
+            UnreadNotifications = await db.Notifications.CountAsync(x => x.UserId == userId && !x.IsRead, cancellationToken),
+            UnreadMessages = await db.ConversationParticipants.CountAsync(x => x.UserId == userId && x.LastReadAt == null, cancellationToken)
+        });
     }
 
     [HttpGet("address")]

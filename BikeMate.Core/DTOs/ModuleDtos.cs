@@ -168,6 +168,45 @@ public sealed record UpdateMechanicProfileDto(
 public sealed record LocationUpdateDto(int? RequestId, int? MechanicId, decimal Latitude, decimal Longitude, decimal? AccuracyMeters);
 public sealed record LiveLocationDto(int LiveLocationId, int? RequestId, int? MechanicId, decimal Latitude, decimal Longitude, DateTime CreatedAt);
 
+public sealed record CreateEmergencyRequestDto(
+    decimal Latitude,
+    decimal Longitude,
+    string ServiceLocation,
+    string? Notes,
+    string? EmergencyLevel);
+
+public sealed record NearbyResponderDto(
+    int MechanicId,
+    string FullName,
+    string? ProfileImageUrl,
+    decimal? Latitude,
+    decimal? Longitude,
+    decimal? DistanceKm,
+    decimal AverageRating,
+    string AvailabilityStatus);
+
+public sealed record EmergencyRequestStatusDto(
+    int RequestId,
+    string Status,
+    string Message,
+    int? AssignedMechanicId,
+    string? AssignedMechanicName,
+    string? AssignedMechanicPhone,
+    decimal CustomerLatitude,
+    decimal CustomerLongitude,
+    string ServiceLocation,
+    decimal? MechanicLatitude,
+    decimal? MechanicLongitude,
+    IReadOnlyCollection<NearbyResponderDto> NearbyResponders,
+    DateTime CreatedAt);
+
+public sealed record EmergencyCallSessionDto(
+    int RequestId,
+    string CallStatus,
+    DateTime StartedAt,
+    DateTime? EndedAt,
+    string Message);
+
 public sealed record ConversationDto(int ConversationId, int? RequestId, string ConversationType, DateTime? LastMessageAt);
 public sealed record ConversationSummaryDto(
     int ConversationId,
@@ -213,6 +252,7 @@ public sealed record AdminDashboardDto(
 
 public sealed record UpdateUserStatusDto(string AccountStatus);
 public sealed record VerificationDecisionDto(string? Notes);
+public sealed record AdminAnnouncementDto(string Title, string Message);
 
 public sealed record RevenueReportDto(DateTime From, DateTime To, decimal Revenue, int PaidPayments);
 public sealed record TopServiceDto(string ServiceName, int RequestCount);

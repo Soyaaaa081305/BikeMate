@@ -1,4 +1,6 @@
 using BikeMate.Api.Helpers;
+using BikeMate.Core.DTOs;
+using BikeMate.Core.Entities;
 using BikeMate.Infrastructure.Data;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -22,6 +24,7 @@ public sealed class NotificationsController(BikeMateDbContext db) : ControllerBa
     }
 
     [HttpPost("{id:int}/read")]
+    [HttpPut("{id:int}/read")]
     public async Task<IActionResult> MarkRead(int id, CancellationToken cancellationToken)
     {
         var userId = User.GetUserId();
@@ -29,5 +32,43 @@ public sealed class NotificationsController(BikeMateDbContext db) : ControllerBa
         notification.IsRead = true;
         await db.SaveChangesAsync(cancellationToken);
         return Ok(new { message = "Notification marked read." });
+    }
+
+    [HttpPut("read-all")]
+    public async Task<IActionResult> MarkAllRead(CancellationToken cancellationToken)
+    {
+        var userId = User.GetUserId();
+        await db.Notifications
+            .Where(x => x.UserId == userId && !x.IsRead)
+            .ExecuteUpdateAsync(x => x.SetProperty(n => n.IsRead, true), cancellationToken);
+        return Ok(new { message = "All notifications marked read." });
+    }
+
+    [HttpPost("register-device-token")]
+    public async Task<IActionResult> RegisterDeviceToken(RegisterDeviceTokenDto dto, CancellationToken cancellationToken)
+    {
+        var userId = User.GetUserId();
+        var existing = await db.UserDeviceTokens
+            .SingleOrDefaultAsync(x => x.UserId == userId && x.DeviceToken == dto.DeviceToken, cancellationToken);
+        if (existing is null)
+        {
+            db.UserDeviceTokens.Add(new UserDeviceToken
+            {
+                UserId = userId,
+                DeviceToken = dto.DeviceToken,
+                Platform = dto.Platform,
+                IsActive = true,
+                CreatedAt = DateTime.UtcNow
+            });
+        }
+        else
+        {
+            existing.Platform = dto.Platform;
+            existing.IsActive = true;
+            existing.UpdatedAt = DateTime.UtcNow;
+        }
+
+        await db.SaveChangesAsync(cancellationToken);
+        return Ok(new { message = "Device token registered." });
     }
 }

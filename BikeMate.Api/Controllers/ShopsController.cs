@@ -34,6 +34,26 @@ public sealed class ShopsController(BikeMateDbContext db) : ControllerBase
             .ToArrayAsync(cancellationToken));
     }
 
+    [HttpGet("/api/shops/nearby")]
+    [AllowAnonymous]
+    public async Task<ActionResult<IReadOnlyCollection<ShopSummaryDto>>> Nearby(
+        [FromQuery] decimal? latitude,
+        [FromQuery] decimal? longitude,
+        CancellationToken cancellationToken)
+    {
+        var shops = await db.Shops
+            .Where(x => x.ShopStatus == "verified")
+            .ToArrayAsync(cancellationToken);
+
+        return Ok(shops
+            .OrderBy(x => latitude is null || longitude is null || x.Latitude is null || x.Longitude is null
+                ? 999m
+                : DistanceKm(latitude.Value, longitude.Value, x.Latitude.Value, x.Longitude.Value))
+            .Take(20)
+            .Select(x => new ShopSummaryDto(x.ShopId, x.ShopName, x.AddressLine, x.City, x.ContactNumber, x.ShopStatus, x.Latitude, x.Longitude))
+            .ToArray());
+    }
+
     [HttpPost]
     [Authorize(Roles = AppRoles.ShopAdmin)]
     public async Task<ActionResult<ShopDetailsDto>> Create(UpsertShopDto dto, CancellationToken cancellationToken)
@@ -258,5 +278,24 @@ public sealed class ShopsController(BikeMateDbContext db) : ControllerBase
     private static ProductDto ToProductDto(Product x)
     {
         return new ProductDto(x.ProductId, x.ShopId, x.ProductName, x.ProductDescription, x.Price, x.StockQuantity, x.IsActive);
+    }
+
+    private static decimal DistanceKm(decimal latitudeA, decimal longitudeA, decimal latitudeB, decimal longitudeB)
+    {
+        const double earthRadiusKm = 6371d;
+        var lat1 = ToRadians((double)latitudeA);
+        var lat2 = ToRadians((double)latitudeB);
+        var deltaLat = ToRadians((double)(latitudeB - latitudeA));
+        var deltaLng = ToRadians((double)(longitudeB - longitudeA));
+        var a = Math.Sin(deltaLat / 2) * Math.Sin(deltaLat / 2) +
+                Math.Cos(lat1) * Math.Cos(lat2) *
+                Math.Sin(deltaLng / 2) * Math.Sin(deltaLng / 2);
+        var c = 2 * Math.Atan2(Math.Sqrt(a), Math.Sqrt(1 - a));
+        return Math.Round((decimal)(earthRadiusKm * c), 2);
+    }
+
+    private static double ToRadians(double degrees)
+    {
+        return degrees * Math.PI / 180d;
     }
 }

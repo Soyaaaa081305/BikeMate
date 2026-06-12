@@ -1,0 +1,1044 @@
+using System.Globalization;
+using System.Windows.Input;
+using BikeMate.Core.DTOs;
+using BikeMate.Services;
+using BikeMate.ViewModels.Customer.Emergency;
+using Microsoft.Maui.Controls.Shapes;
+
+namespace BikeMate.Views.Customer.Emergency;
+
+internal static class EmergencyFlowState
+{
+    public static EmergencyLocationSnapshot? Location { get; set; }
+    public static int RequestId { get; set; }
+    public static EmergencyRequestStatusDto? Status { get; set; }
+}
+
+public sealed class EmergencySosPage : CustomerPageBase
+{
+    private readonly EmergencySosViewModel _viewModel = new();
+    private Border? _outerRing;
+    private bool _isAnimating;
+
+    public EmergencySosPage()
+    {
+        Title = "Emergency SOS";
+        BindingContext = _viewModel;
+        Render();
+    }
+
+    protected override async void OnAppearing()
+    {
+        base.OnAppearing();
+        await LoadLocationAsync();
+        StartPulse();
+    }
+
+    protected override void OnDisappearing()
+    {
+        _isAnimating = false;
+        base.OnDisappearing();
+    }
+
+    protected override bool OnBackButtonPressed()
+    {
+        _ = Shell.Current.GoToAsync("//CustomerHomePage");
+        return true;
+    }
+
+    private async Task LoadLocationAsync()
+    {
+        if (EmergencyFlowState.Location is not null)
+        {
+            _viewModel.Location = EmergencyFlowState.Location;
+            Render();
+            return;
+        }
+
+        _viewModel.StatusMessage = "Getting your current location...";
+        Render();
+        _viewModel.Location = await LocationService.GetCurrentLocationAsync(this);
+        EmergencyFlowState.Location = _viewModel.Location?.Latitude == 0m ? null : _viewModel.Location;
+        _viewModel.StatusMessage = _viewModel.Location?.ErrorMessage ?? "";
+        Render();
+    }
+
+    private void Render()
+    {
+        var root = new Grid
+        {
+            BackgroundColor = Colors.White,
+            RowDefinitions =
+            {
+                new RowDefinition(GridLength.Auto),
+                new RowDefinition(GridLength.Star),
+                new RowDefinition(GridLength.Auto)
+            }
+        };
+
+        root.Add(TopBar("Back", new Command(async () => await Shell.Current.GoToAsync("//CustomerHomePage"))), 0, 0);
+
+        var body = new VerticalStackLayout
+        {
+            Padding = new Thickness(24, 12, 24, 20),
+            Spacing = 14,
+            HorizontalOptions = LayoutOptions.Fill
+        };
+
+        body.Add(new Label
+        {
+            Text = "Are you in an emergency?",
+            TextColor = CustomerUi.Dark,
+            FontAttributes = FontAttributes.Bold,
+            FontSize = 24,
+            HorizontalTextAlignment = TextAlignment.Center
+        });
+        body.Add(new Label
+        {
+            Text = "Press the button below and BikeMate will connect you with nearby help.",
+            TextColor = CustomerUi.Muted,
+            FontSize = 13,
+            HorizontalTextAlignment = TextAlignment.Center
+        });
+        body.Add(BuildSosButton());
+
+        var notes = new Editor
+        {
+            Placeholder = "What happened? Example: flat tire, engine stopped, accident",
+            Text = _viewModel.Notes,
+            AutoSize = EditorAutoSizeOption.TextChanges,
+            MinimumHeightRequest = 76,
+            TextColor = CustomerUi.Dark,
+            PlaceholderColor = CustomerUi.Muted,
+            FontSize = 12,
+            BackgroundColor = Colors.Transparent
+        };
+        notes.TextChanged += (_, e) => _viewModel.Notes = e.NewTextValue ?? "";
+        body.Add(Card(notes, Colors.White, 12, new Thickness(12)));
+
+        if (!string.IsNullOrWhiteSpace(_viewModel.StatusMessage))
+        {
+            body.Add(Label(_viewModel.StatusMessage, 12, Color.FromArgb("#B3261E")));
+        }
+
+        root.Add(body, 0, 1);
+
+        var bottom = new VerticalStackLayout { Padding = new Thickness(22, 8, 22, 24), Spacing = 12 };
+        bottom.Add(LocationCard());
+        bottom.Add(new Button
+        {
+            Text = "Change Location",
+            BackgroundColor = Colors.Transparent,
+            TextColor = CustomerUi.Orange,
+            FontAttributes = FontAttributes.Bold,
+            Command = new Command(async () => await Shell.Current.GoToAsync(nameof(EmergencyLocationPickerPage)))
+        });
+        root.Add(bottom, 0, 2);
+
+        SetScaffold(root, "Home", false);
+    }
+
+    private View BuildSosButton()
+    {
+        var grid = new Grid
+        {
+            HeightRequest = 260,
+            HorizontalOptions = LayoutOptions.Center,
+            VerticalOptions = LayoutOptions.Center
+        };
+
+        _outerRing = Circle(230, Color.FromArgb("#FFB0B0"), 0.42);
+        grid.Add(_outerRing);
+        grid.Add(Circle(176, Color.FromArgb("#FF7070"), 0.72));
+        var inner = Circle(126, Color.FromArgb("#FF1F1F"), 1);
+        inner.Content = new Label
+        {
+            Text = "SOS",
+            TextColor = Colors.White,
+            FontSize = 34,
+            FontAttributes = FontAttributes.Bold,
+            HorizontalTextAlignment = TextAlignment.Center,
+            VerticalTextAlignment = TextAlignment.Center
+        };
+        inner.GestureRecognizers.Add(new TapGestureRecognizer { Command = new Command(async () => await RequestHelpAsync()) });
+        grid.Add(inner);
+        return grid;
+    }
+
+    private static Border Circle(double size, Color color, double opacity)
+    {
+        return new Border
+        {
+            WidthRequest = size,
+            HeightRequest = size,
+            Opacity = opacity,
+            BackgroundColor = color,
+            Stroke = Colors.Transparent,
+            StrokeShape = new RoundRectangle { CornerRadius = size / 2 },
+            HorizontalOptions = LayoutOptions.Center,
+            VerticalOptions = LayoutOptions.Center
+        };
+    }
+
+    private View LocationCard()
+    {
+        var location = _viewModel.Location;
+        var grid = new Grid
+        {
+            ColumnDefinitions =
+            {
+                new ColumnDefinition(GridLength.Auto),
+                new ColumnDefinition(GridLength.Star)
+            },
+            ColumnSpacing = 12
+        };
+        grid.Add(new Border
+        {
+            WidthRequest = 38,
+            HeightRequest = 38,
+            StrokeShape = new RoundRectangle { CornerRadius = 19 },
+            BackgroundColor = CustomerUi.LightOrange,
+            Stroke = Colors.Transparent,
+            Content = new Label
+            {
+                Text = "!",
+                TextColor = CustomerUi.Orange,
+                FontAttributes = FontAttributes.Bold,
+                HorizontalTextAlignment = TextAlignment.Center,
+                VerticalTextAlignment = TextAlignment.Center
+            }
+        }, 0, 0);
+
+        var copy = new VerticalStackLayout { Spacing = 2 };
+        copy.Add(Label("Your current location", 12, CustomerUi.Dark, FontAttributes.Bold));
+        copy.Add(Label(location?.Address ?? "Choose a location before requesting emergency help.", 11, CustomerUi.Muted));
+        grid.Add(copy, 1, 0);
+        return Card(grid, Colors.White, 14, new Thickness(14));
+    }
+
+    private async Task RequestHelpAsync()
+    {
+        var location = _viewModel.Location;
+        if (location is null || location.Latitude == 0m || location.Longitude == 0m)
+        {
+            await DisplayAlertAsync("Location required", "Please use current location or enter your location manually.", "OK");
+            return;
+        }
+
+        var confirmed = await DisplayAlertAsync(
+            "Confirm Emergency Request?",
+            "BikeMate will use your current location and notify nearby available responders.",
+            "Request Help",
+            "Cancel");
+        if (!confirmed)
+        {
+            return;
+        }
+
+        try
+        {
+            _viewModel.IsBusy = true;
+            var status = await EmergencyService.CreateRequestAsync(new CreateEmergencyRequestDto(
+                location.Latitude,
+                location.Longitude,
+                location.Address,
+                _viewModel.Notes,
+                "Roadside"));
+            EmergencyFlowState.RequestId = status.RequestId;
+            EmergencyFlowState.Status = status;
+            await Shell.Current.GoToAsync($"{nameof(CallingEmergencyPage)}?requestId={status.RequestId}");
+        }
+        catch (Exception ex)
+        {
+            await DisplayAlertAsync("Emergency request failed", ex.Message, "OK");
+        }
+        finally
+        {
+            _viewModel.IsBusy = false;
+        }
+    }
+
+    private async void StartPulse()
+    {
+        if (_isAnimating || _outerRing is null)
+        {
+            return;
+        }
+
+        _isAnimating = true;
+        while (_isAnimating && _outerRing is not null)
+        {
+            await Task.WhenAll(_outerRing.ScaleToAsync(1.08, 850, Easing.CubicInOut), _outerRing.FadeToAsync(0.18, 850));
+            await Task.WhenAll(_outerRing.ScaleToAsync(1.0, 850, Easing.CubicInOut), _outerRing.FadeToAsync(0.42, 850));
+        }
+    }
+
+    private static View TopBar(string text, ICommand command)
+    {
+        return new Grid
+        {
+            Padding = new Thickness(16, 16, 16, 6),
+            Children =
+            {
+                new Button
+                {
+                    Text = text,
+                    Command = command,
+                    BackgroundColor = Colors.Transparent,
+                    TextColor = CustomerUi.Dark,
+                    HorizontalOptions = LayoutOptions.Start,
+                    WidthRequest = 70,
+                    HeightRequest = 40
+                }
+            }
+        };
+    }
+}
+
+public sealed class CallingEmergencyPage : CustomerPageBase, IQueryAttributable
+{
+    private readonly CallingEmergencyViewModel _viewModel = new();
+    private IDispatcherTimer? _timer;
+    private int _requestId;
+
+    public CallingEmergencyPage()
+    {
+        Title = "Calling emergency";
+        BindingContext = _viewModel;
+        Render();
+    }
+
+    public void ApplyQueryAttributes(IDictionary<string, object> query)
+    {
+        if (query.TryGetValue("requestId", out var value) &&
+            int.TryParse(Uri.UnescapeDataString(value?.ToString() ?? ""), out var requestId))
+        {
+            _requestId = requestId;
+            EmergencyFlowState.RequestId = requestId;
+        }
+    }
+
+    protected override void OnAppearing()
+    {
+        base.OnAppearing();
+        StartTimer();
+    }
+
+    protected override void OnDisappearing()
+    {
+        _timer?.Stop();
+        base.OnDisappearing();
+    }
+
+    protected override bool OnBackButtonPressed()
+    {
+        _ = ConfirmCancelAsync();
+        return true;
+    }
+
+    private void StartTimer()
+    {
+        if (_timer is not null)
+        {
+            _timer.Start();
+            return;
+        }
+
+        _timer = Dispatcher.CreateTimer();
+        _timer.Interval = TimeSpan.FromSeconds(3);
+        _timer.Tick += async (_, _) =>
+        {
+            _viewModel.ElapsedSeconds += 3;
+            await PollAsync();
+        };
+        _timer.Start();
+        _ = PollAsync();
+    }
+
+    private async Task PollAsync()
+    {
+        if (_requestId <= 0 || _viewModel.IsBusy)
+        {
+            return;
+        }
+
+        try
+        {
+            _viewModel.IsBusy = true;
+            _viewModel.Status = await EmergencyService.GetStatusAsync(_requestId);
+            EmergencyFlowState.Status = _viewModel.Status;
+            Render();
+        }
+        catch (Exception ex)
+        {
+            if (_viewModel.Status is not null)
+            {
+                _viewModel.Status = _viewModel.Status with { Message = $"Connection lost. Retrying... {ex.Message}" };
+            }
+            Render();
+        }
+        finally
+        {
+            _viewModel.IsBusy = false;
+        }
+    }
+
+    private void Render()
+    {
+        var root = new VerticalStackLayout
+        {
+            BackgroundColor = Colors.White,
+            Padding = new Thickness(24, 18, 24, 24),
+            Spacing = 18
+        };
+
+        root.Add(new Label
+        {
+            Text = "Calling emergency...",
+            FontSize = 24,
+            FontAttributes = FontAttributes.Bold,
+            TextColor = CustomerUi.Dark,
+            HorizontalTextAlignment = TextAlignment.Center
+        });
+        root.Add(new Label
+        {
+            Text = "Please stand by while BikeMate connects you with nearby available technicians and support.",
+            FontSize = 13,
+            TextColor = CustomerUi.Muted,
+            HorizontalTextAlignment = TextAlignment.Center
+        });
+        root.Add(BuildRadar());
+        root.Add(Label(_viewModel.Status?.Message ?? "Creating emergency request...", 12, CustomerUi.Muted));
+
+        var buttons = new Grid
+        {
+            ColumnDefinitions =
+            {
+                new ColumnDefinition(GridLength.Star),
+                new ColumnDefinition(GridLength.Star)
+            },
+            ColumnSpacing = 10
+        };
+        buttons.Add(GhostButton("Cancel Request", new Command(async () => await ConfirmCancelAsync())), 0, 0);
+        buttons.Add(OrangeButton(_viewModel.Status?.AssignedMechanicId is null ? "Open Support Call" : "Track Responder",
+            new Command(async () =>
+            {
+                var route = _viewModel.Status?.AssignedMechanicId is null
+                    ? nameof(EmergencyLiveCallPage)
+                    : nameof(ActiveEmergencyTrackingPage);
+                await Shell.Current.GoToAsync($"{route}?requestId={_requestId}");
+            })), 1, 0);
+        root.Add(buttons);
+
+        SetScaffold(new ScrollView { Content = root }, "Home", false);
+    }
+
+    private View BuildRadar()
+    {
+        var grid = new Grid { HeightRequest = 330 };
+        grid.Add(Circle(290, Color.FromArgb("#FFE3D6"), 0.55));
+        grid.Add(Circle(220, Color.FromArgb("#FFB59A"), 0.65));
+        grid.Add(Circle(145, CustomerUi.Orange, 0.95));
+        grid.Add(new Label
+        {
+            Text = Math.Max(1, _viewModel.Status?.NearbyResponders.Count ?? 1).ToString("00", CultureInfo.InvariantCulture),
+            TextColor = Colors.White,
+            FontSize = 44,
+            FontAttributes = FontAttributes.Bold,
+            HorizontalTextAlignment = TextAlignment.Center,
+            VerticalTextAlignment = TextAlignment.Center
+        });
+
+        var responders = (_viewModel.Status?.NearbyResponders ?? []).Take(5).ToArray();
+        var positions = new[]
+        {
+            new Thickness(30, 18, 0, 0),
+            new Thickness(212, 46, 0, 0),
+            new Thickness(34, 238, 0, 0),
+            new Thickness(220, 232, 0, 0),
+            new Thickness(132, 0, 0, 0)
+        };
+
+        for (var i = 0; i < responders.Length; i++)
+        {
+            grid.Add(ResponderBadge(responders[i], positions[i]));
+        }
+
+        return grid;
+    }
+
+    private static View ResponderBadge(NearbyResponderDto responder, Thickness margin)
+    {
+        var stack = new VerticalStackLayout { Spacing = 3, Margin = margin, WidthRequest = 78 };
+        stack.Add(Avatar(EmergencyUi.InitialsFromName(responder.FullName), 46, Colors.White));
+        stack.Add(new Label
+        {
+            Text = responder.FullName.Split(' ', StringSplitOptions.RemoveEmptyEntries).FirstOrDefault() ?? "Responder",
+            FontSize = 10,
+            TextColor = CustomerUi.Dark,
+            HorizontalTextAlignment = TextAlignment.Center,
+            LineBreakMode = LineBreakMode.TailTruncation
+        });
+        return stack;
+    }
+
+    private static Border Circle(double size, Color color, double opacity)
+    {
+        return new Border
+        {
+            WidthRequest = size,
+            HeightRequest = size,
+            Opacity = opacity,
+            BackgroundColor = color,
+            Stroke = Colors.Transparent,
+            StrokeShape = new RoundRectangle { CornerRadius = size / 2 },
+            HorizontalOptions = LayoutOptions.Center,
+            VerticalOptions = LayoutOptions.Center
+        };
+    }
+
+    private async Task ConfirmCancelAsync()
+    {
+        var cancel = await DisplayAlertAsync("Cancel emergency request?", "Only cancel if you no longer need help.", "Cancel Request", "Keep Waiting");
+        if (!cancel)
+        {
+            return;
+        }
+
+        try
+        {
+            if (_requestId > 0)
+            {
+                await EmergencyService.CancelAsync(_requestId);
+            }
+
+            await Shell.Current.GoToAsync("//CustomerHomePage");
+        }
+        catch (Exception ex)
+        {
+            await DisplayAlertAsync("Cancel failed", ex.Message, "OK");
+        }
+    }
+}
+
+public sealed class EmergencyLiveCallPage : CustomerPageBase, IQueryAttributable
+{
+    private readonly EmergencyLiveCallViewModel _viewModel = new();
+    private readonly IEmergencyCallService _callService = new EmergencyCallService();
+    private int _requestId;
+    private bool _started;
+
+    public EmergencyLiveCallPage()
+    {
+        Title = "Emergency call";
+        BindingContext = _viewModel;
+        Render();
+    }
+
+    public void ApplyQueryAttributes(IDictionary<string, object> query)
+    {
+        if (query.TryGetValue("requestId", out var value) &&
+            int.TryParse(Uri.UnescapeDataString(value?.ToString() ?? ""), out var requestId))
+        {
+            _requestId = requestId;
+        }
+    }
+
+    protected override async void OnAppearing()
+    {
+        base.OnAppearing();
+        if (_started || _requestId <= 0)
+        {
+            return;
+        }
+
+        _started = true;
+        await _callService.StartCallAsync(_requestId);
+        try
+        {
+            var session = await EmergencyService.StartCallAsync(_requestId);
+            _viewModel.StatusMessage = session.Message;
+        }
+        catch (Exception ex)
+        {
+            _viewModel.StatusMessage = $"Call placeholder active locally. API call status failed: {ex.Message}";
+        }
+        Render();
+    }
+
+    protected override bool OnBackButtonPressed()
+    {
+        _ = ConfirmLeaveAsync();
+        return true;
+    }
+
+    private void Render()
+    {
+        var root = new Grid
+        {
+            BackgroundColor = Color.FromArgb("#202020"),
+            RowDefinitions =
+            {
+                new RowDefinition(GridLength.Auto),
+                new RowDefinition(GridLength.Star),
+                new RowDefinition(GridLength.Auto)
+            }
+        };
+
+        var header = new Grid
+        {
+            Padding = new Thickness(16, 20, 16, 10),
+            ColumnDefinitions =
+            {
+                new ColumnDefinition(GridLength.Auto),
+                new ColumnDefinition(GridLength.Star),
+                new ColumnDefinition(GridLength.Auto)
+            }
+        };
+        header.Add(new Button
+        {
+            Text = "Back",
+            Command = new Command(async () => await ConfirmLeaveAsync()),
+            BackgroundColor = Colors.Transparent,
+            TextColor = Colors.White,
+            WidthRequest = 64
+        }, 0, 0);
+        header.Add(new Label
+        {
+            Text = "Emergency call",
+            TextColor = Colors.White,
+            FontSize = 16,
+            FontAttributes = FontAttributes.Bold,
+            HorizontalTextAlignment = TextAlignment.Center,
+            VerticalTextAlignment = TextAlignment.Center
+        }, 1, 0);
+        header.Add(new Border
+        {
+            BackgroundColor = Color.FromArgb("#FF3B30"),
+            Stroke = Colors.Transparent,
+            StrokeShape = new RoundRectangle { CornerRadius = 14 },
+            Padding = new Thickness(12, 5),
+            Content = new Label { Text = "Live", TextColor = Colors.White, FontSize = 11, FontAttributes = FontAttributes.Bold }
+        }, 2, 0);
+        root.Add(header, 0, 0);
+
+        var center = new VerticalStackLayout
+        {
+            Spacing = 16,
+            Padding = new Thickness(28),
+            VerticalOptions = LayoutOptions.Center
+        };
+        center.Add(new Border
+        {
+            HeightRequest = 330,
+            BackgroundColor = Color.FromArgb("#333333"),
+            Stroke = Color.FromArgb("#555555"),
+            StrokeShape = new RoundRectangle { CornerRadius = 24 },
+            Content = new VerticalStackLayout
+            {
+                Spacing = 12,
+                VerticalOptions = LayoutOptions.Center,
+                Children =
+                {
+                    Avatar("BM", 92, CustomerUi.Orange),
+                    new Label
+                    {
+                        Text = "BikeMate Support",
+                        TextColor = Colors.White,
+                        FontSize = 22,
+                        FontAttributes = FontAttributes.Bold,
+                        HorizontalTextAlignment = TextAlignment.Center
+                    },
+                    new Label
+                    {
+                        Text = _viewModel.StatusMessage,
+                        TextColor = Color.FromArgb("#DDDDDD"),
+                        FontSize = 13,
+                        HorizontalTextAlignment = TextAlignment.Center,
+                        Margin = new Thickness(22, 0)
+                    }
+                }
+            }
+        });
+        root.Add(center, 0, 1);
+
+        var controls = new HorizontalStackLayout
+        {
+            Padding = new Thickness(18, 0, 18, 26),
+            Spacing = 12,
+            HorizontalOptions = LayoutOptions.Center
+        };
+        controls.Add(CallButton(_viewModel.IsCameraEnabled ? "Cam" : "Cam Off", Colors.White, CustomerUi.Dark, async () =>
+        {
+            _viewModel.IsCameraEnabled = await _callService.ToggleCameraAsync();
+            Render();
+        }));
+        controls.Add(CallButton(_viewModel.IsMuted ? "Muted" : "Mic", Colors.White, CustomerUi.Dark, async () =>
+        {
+            _viewModel.IsMuted = await _callService.ToggleMuteAsync();
+            Render();
+        }));
+        controls.Add(CallButton(_viewModel.IsSpeakerEnabled ? "Speaker" : "Phone", Colors.White, CustomerUi.Dark, async () =>
+        {
+            _viewModel.IsSpeakerEnabled = await _callService.ToggleSpeakerAsync();
+            Render();
+        }));
+        controls.Add(CallButton("End", Color.FromArgb("#FF3B30"), Colors.White, ConfirmLeaveAsync));
+        root.Add(controls, 0, 2);
+
+        SetScaffold(root, "Home", false);
+    }
+
+    private static View CallButton(string text, Color background, Color textColor, Func<Task> action)
+    {
+        return new Button
+        {
+            Text = text,
+            BackgroundColor = background,
+            TextColor = textColor,
+            WidthRequest = 72,
+            HeightRequest = 58,
+            CornerRadius = 29,
+            FontSize = 11,
+            Command = new Command(async () => await action())
+        };
+    }
+
+    private async Task ConfirmLeaveAsync()
+    {
+        var end = await DisplayAlertAsync("End emergency call?", "The emergency request will stay active after the call ends.", "End Call", "Stay");
+        if (!end)
+        {
+            return;
+        }
+
+        await _callService.EndCallAsync(_requestId);
+        try
+        {
+            await EmergencyService.EndCallAsync(_requestId);
+        }
+        catch
+        {
+        }
+
+        await Shell.Current.GoToAsync($"{nameof(ActiveEmergencyTrackingPage)}?requestId={_requestId}");
+    }
+}
+
+public sealed class EmergencyLocationPickerPage : CustomerPageBase
+{
+    private readonly EmergencyLocationPickerViewModel _viewModel = new();
+
+    public EmergencyLocationPickerPage()
+    {
+        Title = "Emergency Location";
+        BindingContext = _viewModel;
+        var existing = EmergencyFlowState.Location;
+        if (existing is not null)
+        {
+            _viewModel.Address = existing.Address;
+            _viewModel.Latitude = existing.Latitude;
+            _viewModel.Longitude = existing.Longitude;
+        }
+
+        Render();
+    }
+
+    private void Render()
+    {
+        var body = new VerticalStackLayout
+        {
+            Padding = new Thickness(18, 12, 18, 24),
+            Spacing = 14,
+            BackgroundColor = Colors.White
+        };
+        body.Add(Header("Emergency Location"));
+        body.Add(Label("Choose where BikeMate should send emergency help.", 13, CustomerUi.Muted));
+
+        var address = new Editor
+        {
+            Placeholder = "Address",
+            Text = _viewModel.Address,
+            MinimumHeightRequest = 92,
+            AutoSize = EditorAutoSizeOption.TextChanges,
+            TextColor = CustomerUi.Dark,
+            PlaceholderColor = CustomerUi.Muted,
+            BackgroundColor = Colors.Transparent
+        };
+        address.TextChanged += (_, e) => _viewModel.Address = e.NewTextValue ?? "";
+        body.Add(Card(address, Colors.White, 10, new Thickness(12)));
+
+        var coords = new Grid
+        {
+            ColumnDefinitions =
+            {
+                new ColumnDefinition(GridLength.Star),
+                new ColumnDefinition(GridLength.Star)
+            },
+            ColumnSpacing = 10
+        };
+        coords.Add(CoordinateEntry("Latitude", _viewModel.Latitude, value => _viewModel.Latitude = value), 0, 0);
+        coords.Add(CoordinateEntry("Longitude", _viewModel.Longitude, value => _viewModel.Longitude = value), 1, 0);
+        body.Add(coords);
+
+        body.Add(GhostButton("Use Current Location", new Command(async () => await UseCurrentLocationAsync())));
+        body.Add(OrangeButton("Save Location", new Command(async () => await SaveAsync())));
+
+        SetScaffold(new ScrollView { Content = body }, "Home", false);
+    }
+
+    private static View CoordinateEntry(string placeholder, decimal value, Action<decimal> changed)
+    {
+        var entry = new Entry
+        {
+            Placeholder = placeholder,
+            Text = value == 0m ? "" : value.ToString(CultureInfo.InvariantCulture),
+            Keyboard = Keyboard.Numeric,
+            TextColor = CustomerUi.Dark,
+            PlaceholderColor = CustomerUi.Muted
+        };
+        entry.TextChanged += (_, e) =>
+        {
+            if (decimal.TryParse(e.NewTextValue, NumberStyles.Number, CultureInfo.InvariantCulture, out var parsed))
+            {
+                changed(parsed);
+            }
+        };
+        return Card(entry, Colors.White, 10, new Thickness(10, 2));
+    }
+
+    private async Task UseCurrentLocationAsync()
+    {
+        var location = await LocationService.GetCurrentLocationAsync(this);
+        if (location is null || location.Latitude == 0m)
+        {
+            await DisplayAlertAsync("Location unavailable", location?.ErrorMessage ?? "No GPS location was returned.", "OK");
+            return;
+        }
+
+        _viewModel.Address = location.Address;
+        _viewModel.Latitude = location.Latitude;
+        _viewModel.Longitude = location.Longitude;
+        Render();
+    }
+
+    private async Task SaveAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_viewModel.Address) || _viewModel.Latitude == 0m || _viewModel.Longitude == 0m)
+        {
+            await DisplayAlertAsync("Location required", "Please enter an address, latitude, and longitude.", "OK");
+            return;
+        }
+
+        EmergencyFlowState.Location = new EmergencyLocationSnapshot(
+            _viewModel.Latitude,
+            _viewModel.Longitude,
+            _viewModel.Address.Trim(),
+            false,
+            null);
+        await Shell.Current.GoToAsync("..");
+    }
+}
+
+public sealed class ActiveEmergencyTrackingPage : CustomerPageBase, IQueryAttributable
+{
+    private readonly ActiveEmergencyTrackingViewModel _viewModel = new();
+    private IDispatcherTimer? _timer;
+    private int _requestId;
+
+    public ActiveEmergencyTrackingPage()
+    {
+        Title = "Emergency Tracking";
+        BindingContext = _viewModel;
+        Render();
+    }
+
+    public void ApplyQueryAttributes(IDictionary<string, object> query)
+    {
+        if (query.TryGetValue("requestId", out var value) &&
+            int.TryParse(Uri.UnescapeDataString(value?.ToString() ?? ""), out var requestId))
+        {
+            _requestId = requestId;
+        }
+    }
+
+    protected override void OnAppearing()
+    {
+        base.OnAppearing();
+        StartPolling();
+    }
+
+    protected override void OnDisappearing()
+    {
+        _timer?.Stop();
+        base.OnDisappearing();
+    }
+
+    protected override bool OnBackButtonPressed()
+    {
+        _ = Shell.Current.GoToAsync("//CustomerHomePage");
+        return true;
+    }
+
+    private void StartPolling()
+    {
+        _timer ??= Dispatcher.CreateTimer();
+        _timer.Interval = TimeSpan.FromSeconds(5);
+        if (!_timer.IsRunning)
+        {
+            _timer.Tick += async (_, _) => await PollAsync();
+        }
+        _timer.Start();
+        _ = PollAsync();
+    }
+
+    private async Task PollAsync()
+    {
+        if (_requestId <= 0)
+        {
+            return;
+        }
+
+        try
+        {
+            _viewModel.Status = await EmergencyService.GetStatusAsync(_requestId);
+            EmergencyFlowState.Status = _viewModel.Status;
+            _viewModel.Banner = "";
+        }
+        catch (Exception ex)
+        {
+            _viewModel.Banner = $"Connection lost. Retrying... {ex.Message}";
+        }
+
+        Render();
+    }
+
+    private void Render()
+    {
+        var status = _viewModel.Status ?? EmergencyFlowState.Status;
+        var body = new VerticalStackLayout
+        {
+            Padding = new Thickness(18, 12, 18, 24),
+            Spacing = 14,
+            BackgroundColor = CustomerUi.Page
+        };
+        body.Add(Header("Emergency Tracking", true));
+        if (!string.IsNullOrWhiteSpace(_viewModel.Banner))
+        {
+            body.Add(Card(Label(_viewModel.Banner, 11, CustomerUi.Muted), Colors.White, 10));
+        }
+
+        body.Add(BuildMap(status));
+        body.Add(Card(new VerticalStackLayout
+        {
+            Spacing = 8,
+            Children =
+            {
+                Label(status?.Status ?? "Loading", 20, CustomerUi.Dark, FontAttributes.Bold),
+                Label(status?.Message ?? "Loading emergency request status...", 12, CustomerUi.Muted),
+                Separator(),
+                Label($"Responder: {status?.AssignedMechanicName ?? "Searching"}", 13, CustomerUi.Dark),
+                Label($"Phone: {status?.AssignedMechanicPhone ?? "Not assigned"}", 12, CustomerUi.Muted),
+                Label($"Location: {status?.ServiceLocation ?? "Current location"}", 12, CustomerUi.Muted)
+            }
+        }, Colors.White, 12));
+
+        var actions = new Grid
+        {
+            ColumnDefinitions =
+            {
+                new ColumnDefinition(GridLength.Star),
+                new ColumnDefinition(GridLength.Star)
+            },
+            ColumnSpacing = 10
+        };
+        actions.Add(GhostButton("Message", new Command(async () => await Shell.Current.GoToAsync("//CustomerMessagesPage"))), 0, 0);
+        actions.Add(OrangeButton("Open Maps", new Command(async () =>
+        {
+            if (status is not null)
+            {
+                await BookingVisuals.OpenGoogleMapsAsync($"{status.CustomerLatitude.ToString(CultureInfo.InvariantCulture)},{status.CustomerLongitude.ToString(CultureInfo.InvariantCulture)}");
+            }
+        })), 1, 0);
+        body.Add(actions);
+
+        if (status?.Status is "EmergencyPending" or "SearchingResponder" or "CallConnecting" or "CallConnected")
+        {
+            body.Add(new Button
+            {
+                Text = "Cancel Emergency Request",
+                BackgroundColor = Color.FromArgb("#FF3B30"),
+                TextColor = Colors.White,
+                CornerRadius = 12,
+                HeightRequest = 48,
+                Command = new Command(async () => await CancelAsync())
+            });
+        }
+
+        SetScaffold(new ScrollView { Content = body }, "Home", false);
+    }
+
+    private static View BuildMap(EmergencyRequestStatusDto? status)
+    {
+        var grid = new Grid
+        {
+            HeightRequest = 260,
+            BackgroundColor = Color.FromArgb("#ECEFF3")
+        };
+        grid.Add(new Label
+        {
+            Text = status is null
+                ? "Loading emergency map..."
+                : $"Customer\n{status.CustomerLatitude:0.000000}, {status.CustomerLongitude:0.000000}\n\nResponder\n{(status.MechanicLatitude?.ToString("0.000000", CultureInfo.InvariantCulture) ?? "pending")}, {(status.MechanicLongitude?.ToString("0.000000", CultureInfo.InvariantCulture) ?? "pending")}",
+            TextColor = CustomerUi.Dark,
+            FontSize = 13,
+            HorizontalTextAlignment = TextAlignment.Center,
+            VerticalTextAlignment = TextAlignment.Center
+        });
+        grid.Add(new Border
+        {
+            WidthRequest = 24,
+            HeightRequest = 24,
+            StrokeShape = new RoundRectangle { CornerRadius = 12 },
+            BackgroundColor = Color.FromArgb("#FF3B30"),
+            Stroke = Colors.White,
+            StrokeThickness = 3,
+            HorizontalOptions = LayoutOptions.Center,
+            VerticalOptions = LayoutOptions.Center
+        });
+        return Card(grid, Colors.White, 12, new Thickness(0));
+    }
+
+    private async Task CancelAsync()
+    {
+        var cancel = await DisplayAlertAsync("Cancel emergency request?", "Only cancel if you no longer need help.", "Cancel Request", "Keep Active");
+        if (!cancel)
+        {
+            return;
+        }
+
+        try
+        {
+            await EmergencyService.CancelAsync(_requestId);
+            await Shell.Current.GoToAsync("//CustomerHomePage");
+        }
+        catch (Exception ex)
+        {
+            await DisplayAlertAsync("Cancel failed", ex.Message, "OK");
+        }
+    }
+}
+
+internal static class EmergencyUi
+{
+    public static string InitialsFromName(string name)
+    {
+        var parts = name.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Length == 0)
+        {
+            return "BM";
+        }
+
+        return string.Concat(parts.Take(2).Select(x => x[0])).ToUpperInvariant();
+    }
+}

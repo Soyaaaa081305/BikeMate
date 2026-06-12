@@ -86,6 +86,10 @@ app.UseAuthentication();
 app.UseAuthorization();
 
 app.MapControllers();
+app.MapHub<BookingHub>("/hubs/booking");
 app.MapHub<ChatHub>("/hubs/chat");
+app.MapHub<EmergencyHub>("/hubs/emergency");
+app.MapHub<LocationHub>("/hubs/location");
+app.MapHub<NotificationHub>("/hubs/notification");
 
 app.Run();

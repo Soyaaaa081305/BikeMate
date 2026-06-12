@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Windows.Input;
 using BikeMate.Core.DTOs;
 using BikeMate.Services;
+using BikeMate.Views.Customer.Emergency;
 using Microsoft.Maui.Controls.Shapes;
 
 namespace BikeMate.Views.Customer;
@@ -454,7 +455,7 @@ public sealed class CustomerHomePage : CustomerPageBase
             TextColor = Colors.White,
             CornerRadius = 12,
             HeightRequest = 46,
-            Command = new Command(async () => await DisplayAlertAsync("Emergency", "Call flow placeholder. Add dialer permission when ready.", "OK"))
+            Command = new Command(async () => await Shell.Current.GoToAsync(nameof(EmergencySosPage)))
         });
 
         return body;

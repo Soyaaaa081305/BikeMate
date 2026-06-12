@@ -15,6 +15,7 @@ namespace BikeMate.Api.Controllers;
 public sealed class PaymentsController(BikeMateDbContext db, IPaymentService paymentService) : ControllerBase
 {
     [HttpPost("create-checkout-session")]
+    [HttpPost("create-checkout")]
     [Authorize(Roles = AppRoles.Customer)]
     public async Task<ActionResult<PaymentDto>> CreateCheckout(CreateCheckoutSessionDto dto, CancellationToken cancellationToken)
     {
@@ -22,6 +23,7 @@ public sealed class PaymentsController(BikeMateDbContext db, IPaymentService pay
     }
 
     [HttpPost("paymongo-webhook")]
+    [HttpPost("webhook/paymongo")]
     [AllowAnonymous]
     public async Task<IActionResult> PayMongoWebhook([FromBody] object payload, CancellationToken cancellationToken)
     {
@@ -43,6 +45,16 @@ public sealed class PaymentsController(BikeMateDbContext db, IPaymentService pay
             .Where(x => x.RequestId == requestId)
             .Select(x => ToDto(x))
             .ToArrayAsync(cancellationToken));
+    }
+
+    [HttpGet("{paymentId:int}")]
+    [Authorize]
+    public async Task<ActionResult<PaymentDto>> GetById(int paymentId, CancellationToken cancellationToken)
+    {
+        return Ok(await QueryPayments()
+            .Where(x => x.PaymentId == paymentId)
+            .Select(x => ToDto(x))
+            .SingleAsync(cancellationToken));
     }
 
     [HttpGet("history")]

@@ -1,5 +1,7 @@
+using BikeMate.Api.Helpers;
 using BikeMate.Api.Services;
 using BikeMate.Core.Constants;
+using BikeMate.Core.Entities;
 using BikeMate.Core.DTOs;
 using BikeMate.Infrastructure.Data;
 using Microsoft.AspNetCore.Authorization;
@@ -43,10 +45,81 @@ public sealed class AdminController(BikeMateDbContext db, IAdminReportService re
     public async Task<IActionResult> UpdateUserStatus(int userId, UpdateUserStatusDto dto, CancellationToken cancellationToken)
     {
         var user = await db.Users.SingleAsync(x => x.UserId == userId, cancellationToken);
+        var oldStatus = user.AccountStatus;
         user.AccountStatus = dto.AccountStatus;
         user.UpdatedAt = DateTime.UtcNow;
+        AddAudit("UpdateUserStatus", "users", userId.ToString(), oldStatus, dto.AccountStatus);
         await db.SaveChangesAsync(cancellationToken);
         return Ok(new { message = "User status updated." });
+    }
+
+    [HttpPut("users/{userId:int}/disable")]
+    public Task<IActionResult> DisableUser(int userId, CancellationToken cancellationToken)
+    {
+        return UpdateUserStatus(userId, new UpdateUserStatusDto("disabled"), cancellationToken);
+    }
+
+    [HttpPut("users/{userId:int}/enable")]
+    public Task<IActionResult> EnableUser(int userId, CancellationToken cancellationToken)
+    {
+        return UpdateUserStatus(userId, new UpdateUserStatusDto("active"), cancellationToken);
+    }
+
+    [HttpGet("customers")]
+    public async Task<IActionResult> Customers(CancellationToken cancellationToken)
+    {
+        return Ok(await db.Clients
+            .Include(x => x.User)
+            .OrderByDescending(x => x.CreatedAt)
+            .Select(x => new
+            {
+                x.ClientId,
+                x.UserId,
+                FullName = x.User!.FirstName + " " + x.User.LastName,
+                x.User.Email,
+                x.User.PhoneNumber,
+                x.User.AccountStatus,
+                x.CreatedAt
+            })
+            .ToArrayAsync(cancellationToken));
+    }
+
+    [HttpGet("mechanics")]
+    public async Task<IActionResult> Mechanics(CancellationToken cancellationToken)
+    {
+        return Ok(await db.Mechanics
+            .Include(x => x.User)
+            .OrderByDescending(x => x.CreatedAt)
+            .Select(x => new
+            {
+                x.MechanicId,
+                x.UserId,
+                FullName = x.User!.FirstName + " " + x.User.LastName,
+                x.User.Email,
+                x.IsVerified,
+                x.AvailabilityStatus,
+                x.AverageRating,
+                x.TotalCompletedJobs
+            })
+            .ToArrayAsync(cancellationToken));
+    }
+
+    [HttpGet("shops")]
+    public async Task<IActionResult> Shops(CancellationToken cancellationToken)
+    {
+        return Ok(await db.Shops
+            .OrderByDescending(x => x.CreatedAt)
+            .Select(x => new
+            {
+                x.ShopId,
+                x.OwnerUserId,
+                x.ShopName,
+                x.City,
+                x.Province,
+                x.ShopStatus,
+                x.CreatedAt
+            })
+            .ToArrayAsync(cancellationToken));
     }
 
     [HttpGet("mechanics/pending")]
@@ -61,6 +134,7 @@ public sealed class AdminController(BikeMateDbContext db, IAdminReportService re
         var mechanic = await db.Mechanics.SingleAsync(x => x.MechanicId == mechanicId, cancellationToken);
         mechanic.IsVerified = true;
         mechanic.UpdatedAt = DateTime.UtcNow;
+        AddAudit("VerifyMechanic", "mechanics", mechanicId.ToString(), "pending", "verified");
         await db.SaveChangesAsync(cancellationToken);
         return Ok(new { message = "Mechanic verified.", dto.Notes });
     }
@@ -72,6 +146,7 @@ public sealed class AdminController(BikeMateDbContext db, IAdminReportService re
         mechanic.IsVerified = false;
         mechanic.User!.AccountStatus = "rejected";
         mechanic.UpdatedAt = DateTime.UtcNow;
+        AddAudit("RejectMechanic", "mechanics", mechanicId.ToString(), "pending", dto.Notes ?? "rejected");
         await db.SaveChangesAsync(cancellationToken);
         return Ok(new { message = "Mechanic rejected.", dto.Notes });
     }
@@ -88,6 +163,7 @@ public sealed class AdminController(BikeMateDbContext db, IAdminReportService re
         var shop = await db.Shops.SingleAsync(x => x.ShopId == shopId, cancellationToken);
         shop.ShopStatus = "verified";
         shop.UpdatedAt = DateTime.UtcNow;
+        AddAudit("VerifyShop", "shops", shopId.ToString(), "pending", "verified");
         await db.SaveChangesAsync(cancellationToken);
         return Ok(new { message = "Shop verified.", dto.Notes });
     }
@@ -98,6 +174,7 @@ public sealed class AdminController(BikeMateDbContext db, IAdminReportService re
         var shop = await db.Shops.SingleAsync(x => x.ShopId == shopId, cancellationToken);
         shop.ShopStatus = "rejected";
         shop.UpdatedAt = DateTime.UtcNow;
+        AddAudit("RejectShop", "shops", shopId.ToString(), "pending", dto.Notes ?? "rejected");
         await db.SaveChangesAsync(cancellationToken);
         return Ok(new { message = "Shop rejected.", dto.Notes });
     }
@@ -111,6 +188,21 @@ public sealed class AdminController(BikeMateDbContext db, IAdminReportService re
             .Include(x => x.Mechanic).ThenInclude(x => x!.User)
             .Include(x => x.Shop)
             .Include(x => x.ShopService)
+            .OrderByDescending(x => x.CreatedAt)
+            .Select(ServiceRequestService.ToDtoExpression())
+            .ToArrayAsync(cancellationToken));
+    }
+
+    [HttpGet("emergency-requests")]
+    public async Task<IActionResult> EmergencyRequests(CancellationToken cancellationToken)
+    {
+        return Ok(await db.ServiceRequests
+            .Include(x => x.CurrentStatus)
+            .Include(x => x.Client).ThenInclude(x => x!.User)
+            .Include(x => x.Mechanic).ThenInclude(x => x!.User)
+            .Include(x => x.Shop)
+            .Include(x => x.ShopService)
+            .Where(x => x.IssueDescription.StartsWith("[EMERGENCY]"))
             .OrderByDescending(x => x.CreatedAt)
             .Select(ServiceRequestService.ToDtoExpression())
             .ToArrayAsync(cancellationToken));
@@ -142,5 +234,61 @@ public sealed class AdminController(BikeMateDbContext db, IAdminReportService re
     public async Task<ActionResult<IReadOnlyCollection<TopMechanicDto>>> TopMechanics(CancellationToken cancellationToken)
     {
         return Ok(await reports.GetTopMechanicsAsync(cancellationToken));
+    }
+
+    [HttpGet("audit-logs")]
+    public async Task<IActionResult> AuditLogs(CancellationToken cancellationToken)
+    {
+        return Ok(await db.AuditLogs
+            .Include(x => x.ActorUser)
+            .OrderByDescending(x => x.CreatedAt)
+            .Take(200)
+            .Select(x => new
+            {
+                x.AuditId,
+                Actor = x.ActorUser == null ? null : x.ActorUser.FirstName + " " + x.ActorUser.LastName,
+                x.ActionName,
+                x.EntityName,
+                x.EntityId,
+                x.OldValuesJson,
+                x.NewValuesJson,
+                x.CreatedAt
+            })
+            .ToArrayAsync(cancellationToken));
+    }
+
+    [HttpPost("announcements")]
+    public async Task<IActionResult> Announcement(AdminAnnouncementDto dto, CancellationToken cancellationToken)
+    {
+        var users = await db.Users.Where(x => x.AccountStatus == "active").Select(x => x.UserId).ToArrayAsync(cancellationToken);
+        foreach (var userId in users)
+        {
+            db.Notifications.Add(new Notification
+            {
+                UserId = userId,
+                NotificationType = "announcement",
+                Title = dto.Title,
+                Message = dto.Message,
+                CreatedAt = DateTime.UtcNow
+            });
+        }
+
+        AddAudit("CreateAnnouncement", "notifications", null, null, dto.Title);
+        await db.SaveChangesAsync(cancellationToken);
+        return Ok(new { message = "Announcement sent.", recipients = users.Length });
+    }
+
+    private void AddAudit(string action, string entity, string? entityId, string? oldValue, string? newValue)
+    {
+        db.AuditLogs.Add(new AuditLog
+        {
+            ActorUserId = User.GetUserId(),
+            ActionName = action,
+            EntityName = entity,
+            EntityId = entityId,
+            OldValuesJson = oldValue,
+            NewValuesJson = newValue,
+            CreatedAt = DateTime.UtcNow
+        });
     }
 }

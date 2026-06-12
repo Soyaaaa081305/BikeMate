@@ -33,6 +33,27 @@ public sealed class MechanicsController(
         return Ok(ToProfileDto(mechanic));
     }
 
+    [HttpGet("/api/mechanics/nearby")]
+    [AllowAnonymous]
+    public async Task<ActionResult<IReadOnlyCollection<MechanicProfileDto>>> Nearby(
+        [FromQuery] decimal? latitude,
+        [FromQuery] decimal? longitude,
+        CancellationToken cancellationToken)
+    {
+        var mechanics = await db.Mechanics
+            .Include(x => x.User)
+            .Where(x => x.IsVerified && x.AvailabilityStatus != "offline")
+            .ToArrayAsync(cancellationToken);
+
+        return Ok(mechanics
+            .OrderBy(x => latitude is null || longitude is null || x.CurrentLatitude is null || x.CurrentLongitude is null
+                ? 999m
+                : DistanceKm(latitude.Value, longitude.Value, x.CurrentLatitude.Value, x.CurrentLongitude.Value))
+            .Take(20)
+            .Select(ToProfileDto)
+            .ToArray());
+    }
+
     [HttpPut("me")]
     public async Task<ActionResult<MechanicProfileDto>> UpdateMe(UpdateMechanicProfileDto dto, CancellationToken cancellationToken)
     {
@@ -121,5 +142,24 @@ public sealed class MechanicsController(
     private static MechanicProfileDto ToProfileDto(Mechanic x)
     {
         return new MechanicProfileDto(x.MechanicId, x.User!.FirstName + " " + x.User.LastName, x.Bio, x.YearsExperience, x.IsVerified, x.AvailabilityStatus, x.AverageRating, x.TotalCompletedJobs);
+    }
+
+    private static decimal DistanceKm(decimal latitudeA, decimal longitudeA, decimal latitudeB, decimal longitudeB)
+    {
+        const double earthRadiusKm = 6371d;
+        var lat1 = ToRadians((double)latitudeA);
+        var lat2 = ToRadians((double)latitudeB);
+        var deltaLat = ToRadians((double)(latitudeB - latitudeA));
+        var deltaLng = ToRadians((double)(longitudeB - longitudeA));
+        var a = Math.Sin(deltaLat / 2) * Math.Sin(deltaLat / 2) +
+                Math.Cos(lat1) * Math.Cos(lat2) *
+                Math.Sin(deltaLng / 2) * Math.Sin(deltaLng / 2);
+        var c = 2 * Math.Atan2(Math.Sqrt(a), Math.Sqrt(1 - a));
+        return Math.Round((decimal)(earthRadiusKm * c), 2);
+    }
+
+    private static double ToRadians(double degrees)
+    {
+        return degrees * Math.PI / 180d;
     }
 }

@@ -1,13 +1,30 @@
 using System.Net.Http.Json;
 using BikeMate.Core.DTOs;
 using BikeMate.Helpers;
+using Microsoft.Maui.Controls.Shapes;
 
 namespace BikeMate.Views.Auth;
 
 [QueryProperty(nameof(Email), "email")]
+[QueryProperty(nameof(FromRegister), "fromRegister")]
 public partial class OtpVerificationPage : ContentPage
 {
+    private const string Orange = "#FF6B2C";
+    private const string Dark = "#222222";
+    private const string Muted = "#777777";
+
+    private readonly Entry _otpEntry = new()
+    {
+        Keyboard = Keyboard.Numeric,
+        MaxLength = 6,
+        HorizontalTextAlignment = TextAlignment.Center,
+        TextColor = Color.FromArgb(Dark),
+        FontSize = 22,
+        BackgroundColor = Colors.Transparent
+    };
+    private readonly ActivityIndicator _busy = new() { Color = Color.FromArgb(Orange), IsVisible = false, IsRunning = false };
     private string _email = string.Empty;
+    private bool _fromRegister;
 
     public string Email
     {
@@ -15,54 +32,229 @@ public partial class OtpVerificationPage : ContentPage
         set
         {
             _email = Uri.UnescapeDataString(value ?? string.Empty);
-            EmailLabel.Text = $"Enter the OTP sent to {_email}.";
+            Render();
         }
+    }
+
+    public string FromRegister
+    {
+        set => _fromRegister = bool.TryParse(value, out var parsed) && parsed;
     }
 
     public OtpVerificationPage()
     {
         InitializeComponent();
+        Render();
     }
 
-    private async void OnVerifyClicked(object? sender, EventArgs e)
+    protected override bool OnBackButtonPressed()
     {
-        await RunOtpRequestAsync("auth/verify-otp", new VerifyOtpRequestDto(Email, OtpEntry.Text ?? string.Empty, "email_verification"), true);
+        _ = GoBackAsync();
+        return true;
     }
 
-    private async void OnResendClicked(object? sender, EventArgs e)
+    private void Render()
+    {
+        Detach(_otpEntry);
+        Detach(_busy);
+        var body = new VerticalStackLayout
+        {
+            Padding = new Thickness(16, 18, 16, 24),
+            Spacing = 20,
+            BackgroundColor = Colors.White
+        };
+
+        body.Add(new Button
+        {
+            Text = "Back",
+            BackgroundColor = Colors.Transparent,
+            TextColor = Color.FromArgb(Dark),
+            WidthRequest = 62,
+            HeightRequest = 38,
+            FontSize = 12,
+            Padding = new Thickness(0),
+            HorizontalOptions = LayoutOptions.Start,
+            Command = new Command(async () => await GoBackAsync())
+        });
+
+        body.Add(new BoxView { HeightRequest = 26, Opacity = 0 });
+        body.Add(new Label
+        {
+            Text = "Account Verification",
+            TextColor = Color.FromArgb(Dark),
+            FontSize = 17,
+            FontAttributes = FontAttributes.Bold,
+            HorizontalTextAlignment = TextAlignment.Center
+        });
+
+        body.Add(EnvelopeMark());
+        body.Add(new Label
+        {
+            Text = $"Please Enter the 6 digit code sent to your email.\n[{MaskEmail(_email)}]",
+            TextColor = Color.FromArgb(Muted),
+            FontSize = 11,
+            HorizontalTextAlignment = TextAlignment.Center
+        });
+
+        body.Add(OtpBox());
+        body.Add(new Button
+        {
+            Text = "Resend Code",
+            BackgroundColor = Colors.Transparent,
+            TextColor = Color.FromArgb("#4F6FD8"),
+            FontSize = 11,
+            Command = new Command(async () => await ResendAsync())
+        });
+        body.Add(PrimaryButton("Continue", VerifyAsync));
+        body.Add(_busy);
+
+        Content = new ScrollView { Content = body };
+    }
+
+    private View EnvelopeMark()
+    {
+        var grid = new Grid { HeightRequest = 130 };
+        grid.Add(new Border
+        {
+            WidthRequest = 94,
+            HeightRequest = 66,
+            BackgroundColor = Color.FromArgb("#F4F4F4"),
+            Stroke = Colors.Transparent,
+            StrokeShape = new RoundRectangle { CornerRadius = 32 },
+            HorizontalOptions = LayoutOptions.Center,
+            VerticalOptions = LayoutOptions.Center
+        });
+        grid.Add(new Label
+        {
+            Text = "M",
+            TextColor = Color.FromArgb("#E94335"),
+            FontSize = 58,
+            FontAttributes = FontAttributes.Bold,
+            HorizontalTextAlignment = TextAlignment.Center,
+            VerticalTextAlignment = TextAlignment.Center
+        });
+        return grid;
+    }
+
+    private View OtpBox()
+    {
+        Detach(_otpEntry);
+        return new Border
+        {
+            Stroke = Color.FromArgb("#DDDDDD"),
+            StrokeShape = new RoundRectangle { CornerRadius = 8 },
+            BackgroundColor = Colors.White,
+            Padding = new Thickness(14, 0),
+            HeightRequest = 52,
+            Content = _otpEntry
+        };
+    }
+
+    private async Task VerifyAsync()
+    {
+        await RunOtpRequestAsync("auth/verify-otp", new VerifyOtpRequestDto(Email, _otpEntry.Text ?? string.Empty, "email_verification"), true);
+    }
+
+    private async Task ResendAsync()
     {
         await RunOtpRequestAsync("auth/resend-otp", new ResendOtpRequestDto(Email, "email_verification"), false);
     }
 
-    private async Task RunOtpRequestAsync<T>(string route, T dto, bool goToLogin)
+    private async Task RunOtpRequestAsync<T>(string route, T dto, bool verified)
     {
-        BusyIndicator.IsVisible = true;
-        BusyIndicator.IsRunning = true;
-
+        SetBusy(true);
         try
         {
-                using var http = ApiConfig.CreateHttpClient();
-                var response = await http.PostAsJsonAsync(route, dto);
-            if (response.IsSuccessStatusCode)
+            using var http = ApiConfig.CreateHttpClient();
+            using var response = await http.PostAsJsonAsync(route, dto);
+            if (!response.IsSuccessStatusCode)
             {
-                await DisplayAlertAsync("Success", goToLogin ? "Email verified. You can now sign in." : "OTP resent.", "OK");
-                if (goToLogin)
-                {
-                    await Shell.Current.GoToAsync($"//{nameof(MainPage)}");
-                }
+                await DisplayAlertAsync("OTP failed", await response.Content.ReadAsStringAsync(), "OK");
                 return;
             }
 
-            await DisplayAlertAsync("OTP failed", await response.Content.ReadAsStringAsync(), "OK");
+            if (!verified)
+            {
+                await DisplayAlertAsync("Code resent", "Please check your email for the new code.", "OK");
+                return;
+            }
+
+            var proceed = await DisplayAlertAsync("Account Successfully Verified", "Your BikeMate customer account is ready.", "Proceed to Dashboard", "Stay Here");
+            if (proceed)
+            {
+                await Shell.Current.GoToAsync("//CustomerHomePage");
+            }
         }
-        catch
+        catch (Exception ex)
         {
-            await DisplayAlertAsync("API offline", "Start the BikeMate API, then try again.", "OK");
+            await DisplayAlertAsync("API offline", $"Start the BikeMate API, then try again. {ex.Message}", "OK");
         }
         finally
         {
-            BusyIndicator.IsRunning = false;
-            BusyIndicator.IsVisible = false;
+            SetBusy(false);
         }
+    }
+
+    private async Task GoBackAsync()
+    {
+        if (_fromRegister && Shell.Current.Navigation.NavigationStack.Count > 1)
+        {
+            await Shell.Current.GoToAsync("..");
+            return;
+        }
+
+        await Shell.Current.GoToAsync($"//{nameof(MainPage)}");
+    }
+
+    private void SetBusy(bool value)
+    {
+        _busy.IsVisible = value;
+        _busy.IsRunning = value;
+    }
+
+    private static void Detach(View view)
+    {
+        switch (view.Parent)
+        {
+            case Border border when ReferenceEquals(border.Content, view):
+                border.Content = null;
+                break;
+            case Layout layout:
+                layout.Remove(view);
+                break;
+            case ContentView contentView when ReferenceEquals(contentView.Content, view):
+                contentView.Content = null;
+                break;
+            case ScrollView scrollView when ReferenceEquals(scrollView.Content, view):
+                scrollView.Content = null;
+                break;
+        }
+    }
+
+    private static Button PrimaryButton(string text, Func<Task> action)
+    {
+        return new Button
+        {
+            Text = text,
+            BackgroundColor = Color.FromArgb(Orange),
+            TextColor = Colors.White,
+            CornerRadius = 10,
+            HeightRequest = 46,
+            FontSize = 12,
+            FontAttributes = FontAttributes.Bold,
+            Command = new Command(async () => await action())
+        };
+    }
+
+    private static string MaskEmail(string email)
+    {
+        if (string.IsNullOrWhiteSpace(email) || !email.Contains('@', StringComparison.Ordinal))
+        {
+            return "secret@gmail.com";
+        }
+
+        var pieces = email.Split('@', 2);
+        var prefix = pieces[0].Length <= 2 ? pieces[0] : pieces[0][..2] + "***";
+        return $"{prefix}@{pieces[1]}";
     }
 }
