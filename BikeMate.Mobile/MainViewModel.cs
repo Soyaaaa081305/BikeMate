@@ -9,7 +9,6 @@ using BikeMate.Core.Constants;
 using BikeMate.Core.DTOs;
 using BikeMate.Helpers;
 using BikeMate.Services;
-using Microsoft.Maui.Authentication;
 using Microsoft.Maui.Controls;
 
 namespace BikeMate
@@ -88,7 +87,6 @@ namespace BikeMate
         public ICommand CreateAccountCommand { get; }
         public ICommand ForgotPasswordCommand { get; }
         public ICommand GoogleLoginCommand { get; }
-        public ICommand FacebookLoginCommand { get; }
 
         public MainViewModel()
         {
@@ -110,8 +108,7 @@ namespace BikeMate
             SignInCommand = new Command(async () => await SignInAsync());
             CreateAccountCommand = new Command(async () => await OpenCreateAccountAsync());
             ForgotPasswordCommand = new Command(async () => await ForgotPasswordAsync());
-            GoogleLoginCommand = new Command(async () => await LoginWithProviderAsync("Google"));
-            FacebookLoginCommand = new Command(async () => await LoginWithProviderAsync("Facebook"));
+            GoogleLoginCommand = new Command(async () => await LoginWithGoogleAsync());
         }
 
         private void GoToNextSlide()
@@ -214,48 +211,24 @@ namespace BikeMate
             }
         }
 
-        private async Task LoginWithProviderAsync(string provider)
+        private async Task LoginWithGoogleAsync()
         {
             try
             {
-                string authUrl = "";
-                string redirectUri = "http://localhost/auth";
-
-                if (provider == "Google")
-                {
-                    string clientId = "1049211486363-4c2qi058nipgjur9pjtvkursib3gdpb7.apps.googleusercontent.com";
-                    authUrl = $"https://accounts.google.com/o/oauth2/v2/auth?response_type=token&client_id={clientId}&redirect_uri={redirectUri}&scope=email%20profile";
-                }
-                else if (provider == "Facebook")
-                {
-                    string appId = "YOUR_FACEBOOK_APP_ID_HERE";
-                    authUrl = $"https://www.facebook.com/v19.0/dialog/oauth?client_id={appId}&redirect_uri={redirectUri}&response_type=token&scope=email,public_profile";
-                }
-
-                WebAuthenticatorResult result = await WebAuthenticator.Default.AuthenticateAsync(
-                    new Uri(authUrl),
-                    new Uri(redirectUri));
-
-                string? accessToken = result?.AccessToken;
-
-                if (!string.IsNullOrEmpty(accessToken))
-                {
-                    await HandleAutoSignUpAsync(accessToken, provider);
-                }
+                LoginStatus = "Opening Google sign-in...";
+                var auth = await GoogleSignInService.SignInAsync(AppRoles.Customer);
+                await GoogleSignInService.StoreAuthAsync(auth);
+                await AppNavigation.NavigateByRoleAsync(GoogleSignInService.PickPrimaryRole(auth.User.Roles));
             }
             catch (TaskCanceledException)
             {
-                // Handled gracefully if the user closes the login window manually
+                LoginStatus = "Google sign-in was cancelled.";
             }
-        }
-
-        private async Task HandleAutoSignUpAsync(string token, string provider)
-        {
-            // Placeholder for your backend logic
-            // Send token to your database to check/create user
-
-            await Shell.Current.DisplayAlertAsync("Success", $"Successfully authenticated via {provider}!", "OK");
-            await AppNavigation.NavigateByRoleAsync(AppRoles.Customer);
+            catch (Exception ex)
+            {
+                LoginStatus = "Google sign-in failed.";
+                await Shell.Current.DisplayAlertAsync("Google sign-in failed", ex.Message, "OK");
+            }
         }
 
         private async Task SignInAsync()

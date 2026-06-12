@@ -2,6 +2,7 @@ using System.Net.Http.Json;
 using BikeMate.Core.Constants;
 using BikeMate.Core.DTOs;
 using BikeMate.Helpers;
+using BikeMate.Services;
 
 namespace BikeMate.Views.Auth;
 
@@ -21,7 +22,26 @@ public partial class LoginPage : ContentPage
 
     private async void OnGoogleClicked(object? sender, EventArgs e)
     {
-        await DisplayAlertAsync("Google Login", "Google OAuth is configured on the API; add your Google client ID before production use.", "OK");
+        BusyIndicator.IsVisible = true;
+        BusyIndicator.IsRunning = true;
+        try
+        {
+            var auth = await GoogleSignInService.SignInAsync(AppRoles.Customer);
+            await GoogleSignInService.StoreAuthAsync(auth);
+            await AppNavigation.NavigateByRoleAsync(GoogleSignInService.PickPrimaryRole(auth.User.Roles));
+        }
+        catch (TaskCanceledException)
+        {
+        }
+        catch (Exception ex)
+        {
+            await DisplayAlertAsync("Google sign-in failed", ex.Message, "OK");
+        }
+        finally
+        {
+            BusyIndicator.IsRunning = false;
+            BusyIndicator.IsVisible = false;
+        }
     }
 
     private async void OnCreateAccountClicked(object? sender, EventArgs e)

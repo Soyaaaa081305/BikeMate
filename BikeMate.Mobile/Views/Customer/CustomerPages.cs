@@ -1585,6 +1585,15 @@ public sealed class PaymentCheckoutPage : CustomerPageBase, IQueryAttributable
         content.Add(Row("Reference", _payment?.ReferenceNumber ?? $"BM-PAY-{_paymentId:0000}"));
         content.Add(Row("Payment Status", paymentStatus));
         content.Add(Row("Total", Money(amount)));
+        if (!string.Equals(_payment?.Status, "paid", StringComparison.OrdinalIgnoreCase) &&
+            Uri.TryCreate(_payment?.CheckoutUrl, UriKind.Absolute, out var checkoutUri))
+        {
+            content.Add(OrangeButton("Open PayMongo Checkout", new Command(async () =>
+            {
+                await Launcher.Default.OpenAsync(checkoutUri);
+            })));
+        }
+
         content.Add(OrangeButton(_fromBookingFlow ? "Proceed to Booking" : "Continue", new Command(async () =>
         {
             if (_fromBookingFlow)

@@ -12,7 +12,7 @@
 		<MauiXamlInflator>SourceGen</MauiXamlInflator>
 
 		<ApplicationTitle>BikeMate</ApplicationTitle>
-		<ApplicationId>com.companyname.bikemate</ApplicationId>
+		<ApplicationId>com.bikemate.mobile</ApplicationId>
 		<ApplicationDisplayVersion>1.0</ApplicationDisplayVersion>
 		<ApplicationVersion>1</ApplicationVersion>
 

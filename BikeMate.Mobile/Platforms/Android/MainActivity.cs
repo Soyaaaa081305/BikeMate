@@ -9,6 +9,14 @@ namespace BikeMate;
               Categories = new[] { Intent.CategoryDefault, Intent.CategoryBrowsable },
               DataScheme = "bikemate",
               DataHost = "auth")]
+[IntentFilter(new[] { Intent.ActionView },
+              Categories = new[] { Intent.CategoryDefault, Intent.CategoryBrowsable },
+              DataScheme = "bikemate",
+              DataHost = "payment-success")]
+[IntentFilter(new[] { Intent.ActionView },
+              Categories = new[] { Intent.CategoryDefault, Intent.CategoryBrowsable },
+              DataScheme = "bikemate",
+              DataHost = "payment-cancelled")]
 public class MainActivity : MauiAppCompatActivity
 {
 }

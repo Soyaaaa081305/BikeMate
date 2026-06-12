@@ -49,43 +49,26 @@ Use Google Maps for embedded maps, Places search, route display, ETA, geocoding,
 
 1. Create an OAuth consent screen in Google Cloud.
 2. Create an Android OAuth client ID using the BikeMate package name and SHA-1.
-3. Create a Web OAuth client ID if the backend validates Google ID tokens.
-4. Put the backend client ID here:
+3. Create a Web OAuth client ID if the backend also validates web-issued Google ID tokens.
+4. Put both client IDs in backend configuration:
 
 ```json
 {
   "GoogleAuth": {
-    "ClientId": "YOUR_GOOGLE_CLIENT_ID"
+    "AndroidClientId": "YOUR_GOOGLE_ANDROID_CLIENT_ID",
+    "WebClientId": "YOUR_GOOGLE_WEB_CLIENT_ID",
+    "ClientIds": [
+      "YOUR_GOOGLE_ANDROID_CLIENT_ID",
+      "YOUR_GOOGLE_WEB_CLIENT_ID"
+    ]
   }
 }
 ```
 
-5. MAUI obtains a Google ID token.
-6. MAUI sends it to `POST /api/auth/google-login`.
+5. MAUI obtains a Google authorization code with PKCE, exchanges it for an ID token, then sends it to `POST /api/auth/google`.
 7. Backend validates it, creates or links a BikeMate user, and returns JWT data.
 
-## 4. Facebook Login
-
-1. Create an app in Meta for Developers.
-2. Add Facebook Login.
-3. Configure Android package name and key hash.
-4. Add App ID and App Secret to backend configuration:
-
-```json
-{
-  "Authentication": {
-    "Facebook": {
-      "AppId": "YOUR_FACEBOOK_APP_ID",
-      "AppSecret": "YOUR_FACEBOOK_APP_SECRET"
-    }
-  }
-}
-```
-
-5. MAUI should send the Facebook access token to a backend endpoint when Facebook login is implemented.
-6. Do not put the Facebook app secret in the mobile app.
-
-## 5. Email OTP With SendGrid
+## 4. Email OTP With SendGrid
 
 1. Create a SendGrid account.
 2. Verify a sender email or domain.
@@ -107,7 +90,7 @@ Use Google Maps for embedded maps, Places search, route display, ETA, geocoding,
 7. Add resend cooldown/rate limiting before production.
 8. Never store SendGrid keys in MAUI.
 
-## 6. PayMongo
+## 5. PayMongo
 
 1. Create a PayMongo account.
 2. Get test public and secret keys.
@@ -130,7 +113,7 @@ Use Google Maps for embedded maps, Places search, route display, ETA, geocoding,
 6. Update payment status only from backend webhook or verified backend payment checks.
 7. Do not put PayMongo secret keys in MAUI.
 
-## 7. Firebase Cloud Messaging
+## 6. Firebase Cloud Messaging
 
 1. Create a Firebase project.
 2. Add an Android app with the BikeMate package name.
@@ -150,7 +133,7 @@ Use Google Maps for embedded maps, Places search, route display, ETA, geocoding,
 6. Register mobile device tokens through `POST /api/notifications/register-device-token`.
 7. Test booking accepted, emergency accepted, payment successful, and message received notifications.
 
-## 8. File Storage
+## 7. File Storage
 
 Use backend-mediated uploads for profile images, motorcycle photos, shop images, chat attachments, before/after photos, and review photos.
 
@@ -166,7 +149,7 @@ Use backend-mediated uploads for profile images, motorcycle photos, shop images,
 
 Do not upload directly from MAUI using storage secrets. The backend should validate file type and size, upload to storage, then save the URL in SQL Server.
 
-## 9. SignalR
+## 8. SignalR
 
 BikeMate now maps these hubs:
 
@@ -187,7 +170,7 @@ Recommended groups:
 
 Mobile clients should connect with the JWT access token, join the relevant group, handle reconnects, and fall back to polling every 3-5 seconds.
 
-## 10. Emergency Call Provider
+## 9. Emergency Call Provider
 
 The emergency live call screen has a placeholder service:
 
@@ -202,11 +185,11 @@ Future provider options:
 
 Do not claim real audio/video is working until a provider is configured and tested.
 
-## 11. Development Seed Logins
+## 10. Development Seed Logins
 
 Use only development seed accounts locally. Check `BikeMate.Infrastructure/Data/BikeMateDbContext.cs` for the current seeded users and roles. Do not reuse seed credentials in production.
 
-## 12. Production Safety Checklist
+## 11. Production Safety Checklist
 
 - No secrets in MAUI.
 - HTTPS only.

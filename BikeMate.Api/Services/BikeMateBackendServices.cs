@@ -1,7 +1,10 @@
 using System.IdentityModel.Tokens.Jwt;
+using System.Net.Http.Headers;
+using System.Net.Http.Json;
 using System.Security.Claims;
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.Json;
 using BikeMate.Core.Constants;
 using BikeMate.Core.DTOs;
 using BikeMate.Core.Entities;
@@ -117,18 +120,82 @@ public interface IEmailService
     Task SendPasswordResetAsync(User user, string token, CancellationToken cancellationToken);
 }
 
-public sealed class EmailService(ILogger<EmailService> logger) : IEmailService
+public sealed class EmailService(
+    ILogger<EmailService> logger,
+    IConfiguration configuration,
+    IHttpClientFactory httpClientFactory) : IEmailService
 {
     public Task SendOtpAsync(User user, string code, string purpose, CancellationToken cancellationToken)
     {
-        logger.LogInformation("Prototype OTP for {Email} ({Purpose}): {OtpCode}", user.Email, purpose, code);
-        return Task.CompletedTask;
+        return SendAsync(
+            user.Email,
+            "Your BikeMate verification code",
+            $"Your BikeMate verification code is {code}. It expires soon. Purpose: {purpose}.",
+            $"<p>Your BikeMate verification code is <strong>{code}</strong>.</p><p>It expires soon. Purpose: {purpose}.</p>",
+            cancellationToken,
+            fallbackLog: "Prototype OTP for {Email} ({Purpose}): {OtpCode}",
+            user.Email,
+            purpose,
+            code);
     }
 
     public Task SendPasswordResetAsync(User user, string token, CancellationToken cancellationToken)
     {
-        logger.LogInformation("Prototype password reset token for {Email}: {ResetToken}", user.Email, token);
-        return Task.CompletedTask;
+        return SendAsync(
+            user.Email,
+            "Reset your BikeMate password",
+            $"Use this BikeMate password reset token: {token}",
+            $"<p>Use this BikeMate password reset token:</p><p><strong>{token}</strong></p>",
+            cancellationToken,
+            fallbackLog: "Prototype password reset token for {Email}: {ResetToken}",
+            user.Email,
+            token);
+    }
+
+    private async Task SendAsync(
+        string toEmail,
+        string subject,
+        string plainText,
+        string html,
+        CancellationToken cancellationToken,
+        string fallbackLog,
+        params object[] fallbackArgs)
+    {
+        var apiKey = configuration["SendGrid:ApiKey"];
+        if (string.IsNullOrWhiteSpace(apiKey) || apiKey.StartsWith("YOUR_", StringComparison.OrdinalIgnoreCase))
+        {
+            logger.LogInformation(fallbackLog, fallbackArgs);
+            return;
+        }
+
+        var fromEmail = configuration["SendGrid:FromEmail"] ?? configuration["Email:From"] ?? "noreply@bikemate.local";
+        var fromName = configuration["SendGrid:FromName"] ?? "BikeMate";
+        using var request = new HttpRequestMessage(HttpMethod.Post, "https://api.sendgrid.com/v3/mail/send");
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
+        request.Content = JsonContent.Create(new
+        {
+            personalizations = new[]
+            {
+                new
+                {
+                    to = new[] { new { email = toEmail } }
+                }
+            },
+            from = new { email = fromEmail, name = fromName },
+            subject,
+            content = new[]
+            {
+                new { type = "text/plain", value = plainText },
+                new { type = "text/html", value = html }
+            }
+        });
+
+        using var response = await httpClientFactory.CreateClient().SendAsync(request, cancellationToken);
+        if (!response.IsSuccessStatusCode)
+        {
+            var error = await response.Content.ReadAsStringAsync(cancellationToken);
+            logger.LogWarning("SendGrid rejected email to {Email}. Status: {Status}. Body: {Body}", toEmail, response.StatusCode, error);
+        }
     }
 }
 
@@ -141,12 +208,24 @@ public sealed class GoogleAuthService(IConfiguration configuration) : IGoogleAut
 {
     public async Task<(string Subject, string Email, string FirstName, string LastName)> ValidateAsync(string idToken, CancellationToken cancellationToken)
     {
-        var clientId = configuration["GoogleAuth:ClientId"];
-        if (!string.IsNullOrWhiteSpace(clientId) && !clientId.StartsWith("YOUR_", StringComparison.OrdinalIgnoreCase))
+        var clientIds = configuration
+            .GetSection("GoogleAuth:ClientIds")
+            .GetChildren()
+            .Select(x => x.Value)
+            .Concat([
+                configuration["GoogleAuth:ClientId"],
+                configuration["GoogleAuth:AndroidClientId"],
+                configuration["GoogleAuth:WebClientId"]
+            ])
+            .Where(x => !string.IsNullOrWhiteSpace(x) && !x.StartsWith("YOUR_", StringComparison.OrdinalIgnoreCase))
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+
+        if (clientIds.Length > 0)
         {
             var payload = await GoogleJsonWebSignature.ValidateAsync(idToken, new GoogleJsonWebSignature.ValidationSettings
             {
-                Audience = [clientId]
+                Audience = clientIds
             });
 
             return (payload.Subject, payload.Email, payload.GivenName ?? "Google", payload.FamilyName ?? "User");
@@ -600,16 +679,84 @@ public interface IPayMongoService
     Task<(string SessionId, string CheckoutUrl, string ReferenceNumber)> CreateCheckoutAsync(int requestId, decimal amount, CancellationToken cancellationToken);
 }
 
-public sealed class PayMongoService(IConfiguration configuration) : IPayMongoService
+public sealed class PayMongoService(
+    IConfiguration configuration,
+    IHttpClientFactory httpClientFactory,
+    ILogger<PayMongoService> logger) : IPayMongoService
 {
-    public Task<(string SessionId, string CheckoutUrl, string ReferenceNumber)> CreateCheckoutAsync(int requestId, decimal amount, CancellationToken cancellationToken)
+    public async Task<(string SessionId, string CheckoutUrl, string ReferenceNumber)> CreateCheckoutAsync(int requestId, decimal amount, CancellationToken cancellationToken)
     {
         var publicKey = configuration["PayMongo:PublicKey"] ?? "YOUR_PAYMONGO_PUBLIC_KEY";
+        var secretKey = configuration["PayMongo:SecretKey"];
         var reference = $"BM-{requestId}-{DateTime.UtcNow:yyyyMMddHHmmss}";
-        var checkout = publicKey.StartsWith("YOUR_", StringComparison.OrdinalIgnoreCase)
-            ? $"https://checkout.paymongo.com/prototype/{reference}"
-            : $"https://checkout.paymongo.com/pay/{reference}";
-        return Task.FromResult(($"cs_{reference.ToLowerInvariant()}", checkout, reference));
+        if (string.IsNullOrWhiteSpace(secretKey) ||
+            !secretKey.StartsWith("sk_", StringComparison.OrdinalIgnoreCase) ||
+            secretKey.StartsWith("YOUR_", StringComparison.OrdinalIgnoreCase))
+        {
+            var checkout = publicKey.StartsWith("YOUR_", StringComparison.OrdinalIgnoreCase)
+                ? $"https://checkout.paymongo.com/prototype/{reference}"
+                : $"https://checkout.paymongo.com/pay/{reference}";
+            return ($"cs_{reference.ToLowerInvariant()}", checkout, reference);
+        }
+
+        var amountInCentavos = Convert.ToInt32(Math.Round(amount * 100m, MidpointRounding.AwayFromZero));
+        using var request = new HttpRequestMessage(HttpMethod.Post, "https://api.paymongo.com/v1/checkout_sessions");
+        request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+        request.Headers.Authorization = new AuthenticationHeaderValue(
+            "Basic",
+            Convert.ToBase64String(Encoding.UTF8.GetBytes($"{secretKey}:")));
+        request.Content = JsonContent.Create(new
+        {
+            data = new
+            {
+                attributes = new
+                {
+                    description = $"BikeMate service request #{requestId}",
+                    reference_number = reference,
+                    send_email_receipt = true,
+                    show_description = true,
+                    show_line_items = true,
+                    success_url = configuration["PayMongo:SuccessUrl"] ?? "bikemate://payment-success",
+                    cancel_url = configuration["PayMongo:CancelUrl"] ?? "bikemate://payment-cancelled",
+                    payment_method_types = new[] { "card", "gcash", "paymaya" },
+                    line_items = new[]
+                    {
+                        new
+                        {
+                            name = "BikeMate Service",
+                            description = $"Service request #{requestId}",
+                            amount = amountInCentavos,
+                            currency = "PHP",
+                            quantity = 1
+                        }
+                    },
+                    metadata = new Dictionary<string, string>
+                    {
+                        ["request_id"] = requestId.ToString(),
+                        ["reference_number"] = reference
+                    }
+                }
+            }
+        });
+
+        using var response = await httpClientFactory.CreateClient().SendAsync(request, cancellationToken);
+        var payload = await response.Content.ReadAsStringAsync(cancellationToken);
+        if (!response.IsSuccessStatusCode)
+        {
+            logger.LogWarning("PayMongo checkout failed for request {RequestId}. Status: {Status}. Body: {Body}", requestId, response.StatusCode, payload);
+            throw new InvalidOperationException("PayMongo checkout could not be created.");
+        }
+
+        using var document = JsonDocument.Parse(payload);
+        var data = document.RootElement.GetProperty("data");
+        var attributes = data.GetProperty("attributes");
+        var sessionId = data.GetProperty("id").GetString() ?? $"cs_{reference.ToLowerInvariant()}";
+        var checkoutUrl = attributes.GetProperty("checkout_url").GetString() ?? $"https://checkout.paymongo.com/pay/{reference}";
+        var responseReference = attributes.TryGetProperty("reference_number", out var refElement)
+            ? refElement.GetString() ?? reference
+            : reference;
+
+        return (sessionId, checkoutUrl, responseReference);
     }
 }
 

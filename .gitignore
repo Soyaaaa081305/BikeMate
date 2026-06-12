@@ -9,9 +9,16 @@ obj/
 *.suo
 *.userosscache
 *.sln.docstates
+*.local.md
 
 *.nupkg
 TestResults/
 
 BikeMate.Api/wwwroot/uploads/*
 !BikeMate.Api/wwwroot/uploads/.gitkeep
+
+.env
+*.local.json
+BikeMate.Api/appsettings.Local.json
+BikeMate.Api/firebase-service-account*.json
+BikeMate.Mobile/Platforms/Android/google-services.json

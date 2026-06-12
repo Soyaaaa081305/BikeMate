@@ -100,23 +100,15 @@
                     <Button Text="System Admin" Command="{Binding SelectDemoRoleCommand}" CommandParameter="SystemAdmin" Grid.Row="1" Grid.Column="1" BackgroundColor="#F2F0FF" TextColor="#4B3EA4" BorderColor="#D5D0FF" BorderWidth="1" CornerRadius="8"/>
                 </Grid>
 
-                <HorizontalStackLayout HorizontalOptions="Center" Spacing="20">
-                    <Button Text="G Google" 
-                    Command="{Binding GoogleLoginCommand}"
-                    TextColor="Black" 
-                    BackgroundColor="White" 
-                    BorderColor="LightGray" 
-                    BorderWidth="1" 
-                    WidthRequest="120"/>
-
-                    <Button Text="f Facebook" 
-                    Command="{Binding FacebookLoginCommand}"
-                    TextColor="Black" 
-                    BackgroundColor="White" 
-                    BorderColor="LightGray" 
-                    BorderWidth="1" 
-                    WidthRequest="120"/>
-                </HorizontalStackLayout>
+                <Button Text="Continue with Google"
+                        Command="{Binding GoogleLoginCommand}"
+                        TextColor="Black"
+                        BackgroundColor="White"
+                        BorderColor="LightGray"
+                        BorderWidth="1"
+                        CornerRadius="15"
+                        HeightRequest="50"
+                        FontAttributes="Bold"/>
 
                 <Button Text="Create Account" Command="{Binding CreateAccountCommand}" BackgroundColor="#2C3E50" TextColor="White" CornerRadius="15" HeightRequest="50"/>
                 <Button Text="Forgot Password"
