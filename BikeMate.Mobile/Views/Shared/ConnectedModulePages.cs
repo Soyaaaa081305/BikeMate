@@ -1,6 +1,7 @@
 using System.Text.Json;
 using BikeMate.Helpers;
 using Microsoft.Maui.Controls.Shapes;
+using static BikeMate.Helpers.JsonDisplayHelper;
 
 namespace BikeMate.Views.Shared
 {
@@ -321,56 +322,6 @@ public abstract class ConnectedModulePage : ContentPage
                 : string.Join("\n\n", value.EnumerateArray().Take(5).Select(x => ToCard(x).Body)),
             _ => Scalar(value)
         };
-    }
-
-    private static string? FirstScalar(JsonElement element, params string[] names)
-    {
-        foreach (var name in names)
-        {
-            var property = element.EnumerateObject()
-                .FirstOrDefault(x => string.Equals(x.Name, name, StringComparison.OrdinalIgnoreCase));
-            if (!string.IsNullOrWhiteSpace(property.Name))
-            {
-                return Scalar(property.Value);
-            }
-        }
-
-        return null;
-    }
-
-    private static string Scalar(JsonElement value)
-    {
-        return value.ValueKind switch
-        {
-            JsonValueKind.String => value.GetString() ?? "",
-            JsonValueKind.Number => value.ToString(),
-            JsonValueKind.True => "Yes",
-            JsonValueKind.False => "No",
-            JsonValueKind.Null => "None",
-            JsonValueKind.Undefined => "",
-            _ => value.ToString()
-        };
-    }
-
-    private static string Humanize(string value)
-    {
-        if (string.IsNullOrWhiteSpace(value))
-        {
-            return value;
-        }
-
-        var chars = new List<char> { char.ToUpperInvariant(value[0]) };
-        foreach (var c in value.Skip(1))
-        {
-            if (char.IsUpper(c))
-            {
-                chars.Add(' ');
-            }
-
-            chars.Add(c);
-        }
-
-        return new string(chars.ToArray());
     }
 
     private sealed record ModuleCard(string Title, string Body);

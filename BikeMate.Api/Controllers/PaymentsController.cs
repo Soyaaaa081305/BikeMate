@@ -191,7 +191,7 @@ public sealed class PaymentsController(
 
     private static PaymentDto ToDto(Payment x)
     {
-        return new PaymentDto(x.PaymentId, x.RequestId, x.PaymentStatus!.StatusName, x.Amount, x.Currency, x.ProviderName, x.CheckoutUrl, x.ProviderReferenceNumber, x.CreatedAt, x.PaidAt);
+        return x.ToDto();
     }
 
     private async Task MarkPaymentPaidAsync(Payment payment, string? providerPaymentId, string requestNote, CancellationToken cancellationToken)
