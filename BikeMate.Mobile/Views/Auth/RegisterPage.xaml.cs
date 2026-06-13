@@ -38,7 +38,7 @@ public partial class RegisterPage : ContentPage
         TextColor = Color.FromArgb(Dark),
         HeightRequest = 72,
         BackgroundColor = Colors.Transparent,
-        FontSize = 12
+        FontSize = 13
     };
     private readonly ActivityIndicator _busy = new() { Color = Color.FromArgb(Orange), IsVisible = false, IsRunning = false };
 
@@ -132,7 +132,7 @@ public partial class RegisterPage : ContentPage
             TextColor = Color.FromArgb(Dark),
             WidthRequest = 38,
             HeightRequest = 38,
-            FontSize = 28,
+            FontSize = 18,
             Padding = new Thickness(0),
             Command = new Command(async () => await GoBackAsync())
         }, 0, 0);
@@ -205,7 +205,7 @@ public partial class RegisterPage : ContentPage
             Text = "Upload",
             BackgroundColor = Color.FromArgb(Orange),
             TextColor = Colors.White,
-            FontSize = 10,
+            FontSize = 11,
             HeightRequest = 30,
             CornerRadius = 14,
             Padding = new Thickness(16, 0),
@@ -236,7 +236,7 @@ public partial class RegisterPage : ContentPage
             {
                 Text = "{    +    }",
                 TextColor = Color.FromArgb("#D7D7D7"),
-                FontSize = 24,
+                FontSize = 18,
                 HorizontalTextAlignment = TextAlignment.Center,
                 VerticalTextAlignment = TextAlignment.Center
             });
@@ -434,7 +434,7 @@ public partial class RegisterPage : ContentPage
             IsPassword = isPassword,
             TextColor = Color.FromArgb(Dark),
             PlaceholderColor = Color.FromArgb("#FF8F68"),
-            FontSize = 12,
+            FontSize = 13,
             BackgroundColor = Colors.Transparent
         };
     }
@@ -480,7 +480,7 @@ public partial class RegisterPage : ContentPage
             TextColor = Colors.White,
             CornerRadius = 10,
             HeightRequest = 46,
-            FontSize = 12,
+            FontSize = 13,
             FontAttributes = FontAttributes.Bold,
             Command = new Command(async () => await action())
         };
@@ -491,7 +491,7 @@ public partial class RegisterPage : ContentPage
         return new Label
         {
             Text = text,
-            FontSize = size,
+            FontSize = AppTypography.SizeFor(size),
             TextColor = Color.FromArgb(color),
             FontAttributes = attributes,
             FontFamily = FontFor(size, attributes),
@@ -502,12 +502,7 @@ public partial class RegisterPage : ContentPage
 
     private static string FontFor(double size, FontAttributes attributes = FontAttributes.None)
     {
-        if (size <= 11)
-        {
-            return (attributes & FontAttributes.Bold) != 0 ? "PTSansCaptionBold" : "PTSansCaption";
-        }
-
-        return size >= 16 || (attributes & FontAttributes.Bold) != 0 ? "Inter" : "PublicSans";
+        return AppTypography.FontFor(size, attributes);
     }
 
     private static View Footnote(string text = "Fields with asterisk (*) are required.")

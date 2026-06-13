@@ -128,16 +128,24 @@ public sealed class ServiceRequestsController(
         var request = await db.ServiceRequests
             .Include(x => x.Client)
             .SingleAsync(x => x.RequestId == id && x.Client!.UserId == userId, cancellationToken);
+        var shopExists = await db.Shops.AnyAsync(x => x.ShopId == dto.ShopId && x.ShopStatus == "verified", cancellationToken);
+        if (!shopExists)
+        {
+            return BadRequest(new { error = "Select an available repair shop." });
+        }
+
+        var service = await db.ShopServices
+            .Where(x => x.ShopId == dto.ShopId && x.IsActive && (dto.ShopServiceId == null || x.ShopServiceId == dto.ShopServiceId))
+            .OrderBy(x => x.ServiceName)
+            .FirstOrDefaultAsync(cancellationToken);
+        if (service is null)
+        {
+            return BadRequest(new { error = "Select an available service from this shop." });
+        }
 
         request.ShopId = dto.ShopId;
-        request.ShopServiceId = dto.ShopServiceId ?? request.ShopServiceId;
-        if (request.ShopServiceId is not null)
-        {
-            request.EstimatedTotal = await db.ShopServices
-                .Where(x => x.ShopServiceId == request.ShopServiceId)
-                .Select(x => x.BasePrice)
-                .SingleAsync(cancellationToken);
-        }
+        request.ShopServiceId = service.ShopServiceId;
+        request.EstimatedTotal = service.BasePrice;
 
         var mechanicId = await db.ShopMechanics
             .Where(x => x.ShopId == dto.ShopId && x.IsActive)

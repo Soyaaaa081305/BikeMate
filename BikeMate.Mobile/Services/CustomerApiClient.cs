@@ -1,6 +1,8 @@
+using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using BikeMate.Core.DTOs;
 using BikeMate.Helpers;
+using Microsoft.Maui.Storage;
 
 namespace BikeMate.Services;
 
@@ -82,6 +84,26 @@ internal static class CustomerApiClient
         return await GetAsync<IReadOnlyList<PaymentDto>>(http, "payments/history", cancellationToken);
     }
 
+    public static async Task<PaymentDto?> GetLatestPaymentForRequestAsync(int requestId, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            using var http = await ApiConfig.CreateAuthorizedHttpClientAsync();
+            return await GetAsync<PaymentDto>(http, $"payments/request/{requestId}/latest", cancellationToken);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    public static async Task<PaymentDto> RefreshPaymentAsync(int paymentId, CancellationToken cancellationToken = default)
+    {
+        using var http = await ApiConfig.CreateAuthorizedHttpClientAsync();
+        using var response = await http.PostAsync($"payments/{paymentId}/refresh", null, cancellationToken);
+        return await ReadAsync<PaymentDto>(response, cancellationToken);
+    }
+
     public static async Task<IReadOnlyList<ConversationSummaryDto>> GetConversationsAsync(CancellationToken cancellationToken = default)
     {
         using var http = await ApiConfig.CreateAuthorizedHttpClientAsync();
@@ -107,12 +129,26 @@ internal static class CustomerApiClient
         return await GetAsync<IReadOnlyList<MessageDto>>(http, $"conversations/{conversationId}/messages", cancellationToken);
     }
 
-    public static async Task<MessageDto> SendMessageAsync(int conversationId, string messageText, CancellationToken cancellationToken = default)
+    public static async Task<UploadedFileDto> UploadFileAsync(FileResult file, string folder = "chat", CancellationToken cancellationToken = default)
+    {
+        using var http = await ApiConfig.CreateAuthorizedHttpClientAsync();
+        await using var stream = await file.OpenReadAsync();
+        using var content = new MultipartFormDataContent();
+        using var streamContent = new StreamContent(stream);
+        streamContent.Headers.ContentType = new MediaTypeHeaderValue(ContentTypeFor(file));
+        content.Add(streamContent, "file", file.FileName);
+        content.Add(new StringContent(folder), "folder");
+
+        using var response = await http.PostAsync("files/upload", content, cancellationToken);
+        return await ReadAsync<UploadedFileDto>(response, cancellationToken);
+    }
+
+    public static async Task<MessageDto> SendMessageAsync(int conversationId, string messageText, string? attachmentUrl = null, CancellationToken cancellationToken = default)
     {
         using var http = await ApiConfig.CreateAuthorizedHttpClientAsync();
         using var response = await http.PostAsJsonAsync(
             $"conversations/{conversationId}/messages",
-            new SendMessageDto(messageText, null),
+            new SendMessageDto(messageText, attachmentUrl),
             cancellationToken);
         return await ReadAsync<MessageDto>(response, cancellationToken);
     }
@@ -221,6 +257,30 @@ internal static class CustomerApiClient
 
         return await response.Content.ReadFromJsonAsync<T>(cancellationToken)
             ?? throw new InvalidOperationException("The API returned an empty response.");
+    }
+
+    private static string ContentTypeFor(FileResult file)
+    {
+        if (!string.IsNullOrWhiteSpace(file.ContentType))
+        {
+            return file.ContentType;
+        }
+
+        return Path.GetExtension(file.FileName).ToLowerInvariant() switch
+        {
+            ".jpg" or ".jpeg" => "image/jpeg",
+            ".png" => "image/png",
+            ".webp" => "image/webp",
+            ".pdf" => "application/pdf",
+            ".txt" => "text/plain",
+            ".doc" => "application/msword",
+            ".docx" => "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            ".mp4" => "video/mp4",
+            ".webm" => "video/webm",
+            ".mov" => "video/quicktime",
+            ".3gp" => "video/3gpp",
+            _ => "application/octet-stream"
+        };
     }
 }
 

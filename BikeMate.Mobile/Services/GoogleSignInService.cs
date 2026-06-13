@@ -47,7 +47,7 @@ public static class GoogleSignInService
 
             var idToken = await ExchangeCodeForIdTokenAsync(code, codeVerifier);
             using var api = ApiConfig.CreateHttpClient();
-            using var response = await api.PostAsJsonAsync("auth/google-login", new GoogleLoginRequestDto(idToken, role));
+            using var response = await api.PostAsJsonAsync("auth/google/mobile-complete", new GoogleLoginRequestDto(idToken, role));
             if (!response.IsSuccessStatusCode)
             {
                 var errorBody = await response.Content.ReadAsStringAsync();

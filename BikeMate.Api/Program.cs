@@ -84,6 +84,7 @@ builder.Services.AddScoped<IPayMongoService, PayMongoService>();
 builder.Services.AddScoped<IPaymentService, PaymentService>();
 builder.Services.AddScoped<INotificationService, NotificationService>();
 builder.Services.AddScoped<IAdminReportService, AdminReportService>();
+builder.Services.AddHttpContextAccessor();
 
 var app = builder.Build();
 
@@ -95,6 +96,7 @@ if (app.Environment.IsDevelopment())
 app.UseForwardedHeaders();
 app.UseHttpsRedirection();
 app.UseMiddleware<ErrorHandlingMiddleware>();
+app.UseStaticFiles();
 app.UseCors("MobileApp");
 app.UseAuthentication();
 app.UseAuthorization();

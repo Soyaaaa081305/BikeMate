@@ -4,6 +4,7 @@ using BikeMate.Core.DTOs;
 using BikeMate.Services;
 using BikeMate.ViewModels.Customer.Emergency;
 using Microsoft.Maui.Controls.Shapes;
+using Microsoft.Maui.Devices.Sensors;
 
 namespace BikeMate.Views.Customer.Emergency;
 
@@ -90,7 +91,7 @@ public sealed class EmergencySosPage : CustomerPageBase
             Text = "Are you in an emergency?",
             TextColor = CustomerUi.Dark,
             FontAttributes = FontAttributes.Bold,
-            FontSize = 24,
+            FontSize = 18,
             HorizontalTextAlignment = TextAlignment.Center
         });
         body.Add(new Label
@@ -110,7 +111,7 @@ public sealed class EmergencySosPage : CustomerPageBase
             MinimumHeightRequest = 76,
             TextColor = CustomerUi.Dark,
             PlaceholderColor = CustomerUi.Muted,
-            FontSize = 12,
+            FontSize = 13,
             BackgroundColor = Colors.Transparent
         };
         notes.TextChanged += (_, e) => _viewModel.Notes = e.NewTextValue ?? "";
@@ -155,7 +156,7 @@ public sealed class EmergencySosPage : CustomerPageBase
         {
             Text = "SOS",
             TextColor = Colors.White,
-            FontSize = 34,
+            FontSize = 18,
             FontAttributes = FontAttributes.Bold,
             HorizontalTextAlignment = TextAlignment.Center,
             VerticalTextAlignment = TextAlignment.Center
@@ -395,7 +396,7 @@ public sealed class CallingEmergencyPage : CustomerPageBase, IQueryAttributable
         root.Add(new Label
         {
             Text = "Calling emergency...",
-            FontSize = 24,
+            FontSize = 18,
             FontAttributes = FontAttributes.Bold,
             TextColor = CustomerUi.Dark,
             HorizontalTextAlignment = TextAlignment.Center
@@ -443,7 +444,7 @@ public sealed class CallingEmergencyPage : CustomerPageBase, IQueryAttributable
         {
             Text = Math.Max(1, _viewModel.Status?.NearbyResponders.Count ?? 1).ToString("00", CultureInfo.InvariantCulture),
             TextColor = Colors.White,
-            FontSize = 44,
+            FontSize = 18,
             FontAttributes = FontAttributes.Bold,
             HorizontalTextAlignment = TextAlignment.Center,
             VerticalTextAlignment = TextAlignment.Center
@@ -474,7 +475,7 @@ public sealed class CallingEmergencyPage : CustomerPageBase, IQueryAttributable
         stack.Add(new Label
         {
             Text = responder.FullName.Split(' ', StringSplitOptions.RemoveEmptyEntries).FirstOrDefault() ?? "Responder",
-            FontSize = 10,
+            FontSize = 11,
             TextColor = CustomerUi.Dark,
             HorizontalTextAlignment = TextAlignment.Center,
             LineBreakMode = LineBreakMode.TailTruncation
@@ -617,7 +618,7 @@ public sealed class EmergencyLiveCallPage : CustomerPageBase, IQueryAttributable
         {
             Text = "Emergency call",
             TextColor = Colors.White,
-            FontSize = 16,
+            FontSize = 18,
             FontAttributes = FontAttributes.Bold,
             HorizontalTextAlignment = TextAlignment.Center,
             VerticalTextAlignment = TextAlignment.Center
@@ -655,7 +656,7 @@ public sealed class EmergencyLiveCallPage : CustomerPageBase, IQueryAttributable
                     {
                         Text = "BikeMate Support",
                         TextColor = Colors.White,
-                        FontSize = 22,
+                        FontSize = 18,
                         FontAttributes = FontAttributes.Bold,
                         HorizontalTextAlignment = TextAlignment.Center
                     },
@@ -779,58 +780,79 @@ public sealed class EmergencyLocationPickerPage : CustomerPageBase
             BackgroundColor = Colors.White
         };
         body.Add(Header("Emergency Location"));
-        body.Add(Label("Choose where BikeMate should send emergency help.", 13, CustomerUi.Muted));
+        body.Add(Label("Search or use GPS so BikeMate can send help to the right place.", 13, CustomerUi.Muted));
 
-        var address = new Editor
+        var search = new Entry
         {
-            Placeholder = "Address",
+            Placeholder = "Search address, landmark, or nearby place",
             Text = _viewModel.Address,
-            MinimumHeightRequest = 92,
-            AutoSize = EditorAutoSizeOption.TextChanges,
             TextColor = CustomerUi.Dark,
             PlaceholderColor = CustomerUi.Muted,
             BackgroundColor = Colors.Transparent
         };
-        address.TextChanged += (_, e) => _viewModel.Address = e.NewTextValue ?? "";
-        body.Add(Card(address, Colors.White, 10, new Thickness(12)));
+        search.TextChanged += (_, e) => _viewModel.Address = e.NewTextValue ?? "";
+        body.Add(Card(search, Colors.White, 10, new Thickness(12, 2)));
+        body.Add(BuildMapPreview());
 
-        var coords = new Grid
-        {
-            ColumnDefinitions =
-            {
-                new ColumnDefinition(GridLength.Star),
-                new ColumnDefinition(GridLength.Star)
-            },
-            ColumnSpacing = 10
-        };
-        coords.Add(CoordinateEntry("Latitude", _viewModel.Latitude, value => _viewModel.Latitude = value), 0, 0);
-        coords.Add(CoordinateEntry("Longitude", _viewModel.Longitude, value => _viewModel.Longitude = value), 1, 0);
-        body.Add(coords);
-
-        body.Add(GhostButton("Use Current Location", new Command(async () => await UseCurrentLocationAsync())));
-        body.Add(OrangeButton("Save Location", new Command(async () => await SaveAsync())));
+        var actions = new Grid { ColumnSpacing = 10 };
+        actions.ColumnDefinitions.Add(new ColumnDefinition(GridLength.Star));
+        actions.ColumnDefinitions.Add(new ColumnDefinition(GridLength.Star));
+        actions.Add(GhostButton("Use GPS", new Command(async () => await UseCurrentLocationAsync())), 0, 0);
+        actions.Add(GhostButton("Search Map", new Command(async () => await SearchAddressAsync())), 1, 0);
+        body.Add(actions);
+        body.Add(OrangeButton("Confirm Location", new Command(async () => await SaveAsync())));
 
         SetScaffold(new ScrollView { Content = body }, "Home", false);
     }
 
-    private static View CoordinateEntry(string placeholder, decimal value, Action<decimal> changed)
+    private View BuildMapPreview()
     {
-        var entry = new Entry
+        var latitude = _viewModel.Latitude;
+        var longitude = _viewModel.Longitude;
+        var grid = new Grid
         {
-            Placeholder = placeholder,
-            Text = value == 0m ? "" : value.ToString(CultureInfo.InvariantCulture),
-            Keyboard = Keyboard.Numeric,
-            TextColor = CustomerUi.Dark,
-            PlaceholderColor = CustomerUi.Muted
+            HeightRequest = 250,
+            BackgroundColor = Color.FromArgb("#ECEFF3")
         };
-        entry.TextChanged += (_, e) =>
+
+        if (latitude != 0m && longitude != 0m)
         {
-            if (decimal.TryParse(e.NewTextValue, NumberStyles.Number, CultureInfo.InvariantCulture, out var parsed))
+            grid.Add(new WebView
             {
-                changed(parsed);
-            }
-        };
-        return Card(entry, Colors.White, 10, new Thickness(10, 2));
+                Source = BookingVisuals.GoogleMapSource(latitude, longitude),
+                HeightRequest = 250
+            });
+        }
+        else
+        {
+            grid.Add(new Label
+            {
+                Text = "Use GPS or search an address to preview the emergency location.",
+                TextColor = CustomerUi.Muted,
+                FontSize = 13,
+                FontFamily = CustomerUi.FontBody,
+                HorizontalTextAlignment = TextAlignment.Center,
+                VerticalTextAlignment = TextAlignment.Center,
+                Margin = new Thickness(18)
+            });
+        }
+
+        grid.Add(new Label
+        {
+            Text = string.IsNullOrWhiteSpace(_viewModel.Address) ? "No location selected" : _viewModel.Address,
+            TextColor = CustomerUi.Dark,
+            BackgroundColor = Color.FromRgba(255, 255, 255, 0.9),
+            FontSize = 11,
+            FontFamily = CustomerUi.FontCaptionBold,
+            Padding = new Thickness(10, 6),
+            HorizontalTextAlignment = TextAlignment.Center,
+            VerticalTextAlignment = TextAlignment.Center,
+            HorizontalOptions = LayoutOptions.Center,
+            VerticalOptions = LayoutOptions.End,
+            Margin = new Thickness(12)
+        });
+
+        return Card(grid, Colors.White, 10, new Thickness(0));
     }
 
     private async Task UseCurrentLocationAsync()
@@ -848,11 +870,45 @@ public sealed class EmergencyLocationPickerPage : CustomerPageBase
         Render();
     }
 
+    private async Task SearchAddressAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_viewModel.Address))
+        {
+            await DisplayAlertAsync("Search needed", "Enter an address, landmark, or nearby place first.", "OK");
+            return;
+        }
+
+        try
+        {
+            var matches = await Geocoding.Default.GetLocationsAsync(_viewModel.Address.Trim());
+            var location = matches?.FirstOrDefault();
+            if (location is null)
+            {
+                await DisplayAlertAsync("Place not found", "BikeMate could not find that place. Try a more specific address or use GPS.", "OK");
+                return;
+            }
+
+            _viewModel.Latitude = (decimal)location.Latitude;
+            _viewModel.Longitude = (decimal)location.Longitude;
+            var reverse = await LocationService.ReverseGeocodeAsync(location);
+            if (!string.IsNullOrWhiteSpace(reverse))
+            {
+                _viewModel.Address = reverse;
+            }
+
+            Render();
+        }
+        catch (Exception ex)
+        {
+            await DisplayAlertAsync("Search unavailable", $"Maps search is unavailable right now. {ex.Message}", "OK");
+        }
+    }
+
     private async Task SaveAsync()
     {
         if (string.IsNullOrWhiteSpace(_viewModel.Address) || _viewModel.Latitude == 0m || _viewModel.Longitude == 0m)
         {
-            await DisplayAlertAsync("Location required", "Please enter an address, latitude, and longitude.", "OK");
+            await DisplayAlertAsync("Location required", "Use GPS or search the map before confirming this emergency location.", "OK");
             return;
         }
 
@@ -1054,7 +1110,7 @@ public sealed class ActiveEmergencyTrackingPage : CustomerPageBase, IQueryAttrib
             Text = hasResponderLocation ? "Responder route to you" : "Waiting for responder location",
             TextColor = hasResponderLocation ? Color.FromArgb("#167A3A") : Color.FromArgb("#503CFF"),
             BackgroundColor = Color.FromRgba(255, 255, 255, 0.88),
-            FontSize = 12,
+            FontSize = 13,
             FontFamily = CustomerUi.FontCaptionBold,
             Padding = new Thickness(10, 6),
             HorizontalTextAlignment = TextAlignment.Center,

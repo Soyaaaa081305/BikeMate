@@ -57,7 +57,7 @@ internal static class LocationService
         }
     }
 
-    private static async Task<string?> ReverseGeocodeAsync(Location location)
+    public static async Task<string?> ReverseGeocodeAsync(Location location)
     {
         try
         {

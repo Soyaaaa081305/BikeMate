@@ -9,5 +9,7 @@ public static class RequestStatuses
     public const string Arrived = "arrived";
     public const string InProgress = "in_progress";
     public const string Completed = "completed";
+    public const string PaymentPending = "payment_pending";
+    public const string Paid = "paid";
     public const string Cancelled = "cancelled";
 }

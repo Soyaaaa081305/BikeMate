@@ -13,7 +13,7 @@ namespace BikeMate.Views.Shared
         private readonly VerticalStackLayout _content = new() { Padding = new Thickness(20), Spacing = 14 };
         private readonly Label _status = new()
         {
-            FontSize = 12,
+            FontSize = 13,
             TextColor = Color.FromArgb("#6E6E6E"),
             LineBreakMode = LineBreakMode.WordWrap
         };
@@ -65,7 +65,7 @@ namespace BikeMate.Views.Shared
             titleStack.Add(new Label
             {
                 Text = title,
-                FontSize = 24,
+                FontSize = 18,
                 FontAttributes = FontAttributes.Bold,
                 TextColor = Color.FromArgb("#1F2933")
             });
@@ -116,7 +116,7 @@ namespace BikeMate.Views.Shared
                     Content = new Label
                     {
                         Text = highlight,
-                        FontSize = 12,
+                        FontSize = 13,
                         TextColor = Color.FromArgb("#C45500"),
                         FontAttributes = FontAttributes.Bold
                     }
@@ -191,7 +191,7 @@ namespace BikeMate.Views.Shared
                         new Label
                         {
                             Text = pieces.ElementAtOrDefault(0) ?? card,
-                            FontSize = 16,
+                            FontSize = 18,
                             FontAttributes = FontAttributes.Bold,
                             TextColor = Color.FromArgb("#1F2933")
                         },

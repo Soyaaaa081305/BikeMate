@@ -38,6 +38,13 @@ public sealed class AuthController(
         return Ok(await authService.GoogleLoginAsync(dto, cancellationToken));
     }
 
+    [HttpPost("google/mobile-complete")]
+    [AllowAnonymous]
+    public async Task<ActionResult<AuthResponseDto>> GoogleMobileComplete(GoogleLoginRequestDto dto, CancellationToken cancellationToken)
+    {
+        return Ok(await authService.GoogleLoginAsync(dto, cancellationToken));
+    }
+
     [HttpGet("google/start")]
     [AllowAnonymous]
     public IActionResult StartGoogleLogin([FromQuery] string? role = null)
@@ -128,7 +135,23 @@ public sealed class AuthController(
     public async Task<IActionResult> ForgotPassword(ForgotPasswordRequestDto dto, CancellationToken cancellationToken)
     {
         await authService.ForgotPasswordAsync(dto, cancellationToken);
-        return Ok(new { message = "Password reset instructions were sent if the email exists." });
+        return Ok(new { message = "If that email exists, BikeMate sent a reset code." });
+    }
+
+    [HttpPost("verify-password-reset-otp")]
+    [AllowAnonymous]
+    public async Task<IActionResult> VerifyPasswordResetOtp(VerifyPasswordResetOtpRequestDto dto, CancellationToken cancellationToken)
+    {
+        await authService.VerifyPasswordResetOtpAsync(dto, cancellationToken);
+        return Ok(new { message = "Reset code verified." });
+    }
+
+    [HttpPost("resend-password-reset-otp")]
+    [AllowAnonymous]
+    public async Task<IActionResult> ResendPasswordResetOtp(ResendPasswordResetOtpRequestDto dto, CancellationToken cancellationToken)
+    {
+        await authService.ResendPasswordResetOtpAsync(dto, cancellationToken);
+        return Ok(new { message = "If that email exists, BikeMate sent a new reset code." });
     }
 
     [HttpPost("reset-password")]

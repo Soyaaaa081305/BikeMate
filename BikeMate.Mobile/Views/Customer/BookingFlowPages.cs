@@ -32,7 +32,29 @@ internal static class BookingDraft
     public static string? VideoMediaUrl { get; set; }
     public static string? ImagePreviewPath { get; set; }
     public static string? VideoPreviewPath { get; set; }
+    public static bool RequestMediaAttached { get; set; }
     public static string PaymentMethod { get; set; } = "GCASH";
+    public static readonly string[] RegionOptions =
+    [
+        "Makati",
+        "San Pedro",
+        "Pasig",
+        "Quezon City",
+        "Baguio",
+        "Cagayan de Oro",
+        "Cebu",
+        "Naga and Legazpi",
+        "Central Luzon",
+        "Mega Manila"
+    ];
+    public static readonly string[] LocationOptions =
+    [
+        "Makati Ave, Mega Manila",
+        "San Pedro, Laguna",
+        "Pasig City",
+        "Quezon City",
+        "Use current location"
+    ];
 
     public static void Reset()
     {
@@ -44,6 +66,7 @@ internal static class BookingDraft
         VideoMediaUrl = null;
         ImagePreviewPath = null;
         VideoPreviewPath = null;
+        RequestMediaAttached = false;
         PaymentMethod = "GCASH";
         Region = "Mega Manila";
         LocationName = "";
@@ -64,6 +87,11 @@ internal static class BookingDraft
         {
             Latitude = address.Latitude ?? Latitude;
             Longitude = address.Longitude ?? Longitude;
+            if (!string.IsNullOrWhiteSpace(address.City))
+            {
+                LocationName = address.City;
+                Region = RegionForLocation($"{address.City} {address.Province}");
+            }
         }
 
         var motorcycle = customer.Motorcycles.FirstOrDefault();
@@ -123,15 +151,184 @@ internal static class BookingDraft
 
     public static void SetManualLocation(string locationName)
     {
-        LocationName = locationName;
-        (Latitude, Longitude) = locationName switch
+        var (latitude, longitude) = CoordinatesForLocation(locationName);
+        ApplyLocation(locationName, null, latitude, longitude);
+    }
+
+    public static void SetRegion(string region)
+    {
+        if (string.IsNullOrWhiteSpace(region))
+        {
+            return;
+        }
+
+        Region = region;
+        var matchingLocation = Region switch
+        {
+            "Makati" => "Makati Ave, Mega Manila",
+            "San Pedro" => "San Pedro, Laguna",
+            "Pasig" => "Pasig City",
+            "Quezon City" => "Quezon City",
+            "Baguio" => "Baguio City",
+            "Cagayan de Oro" => "Cagayan de Oro",
+            "Cebu" => "Cebu City",
+            "Naga and Legazpi" => "Naga City",
+            "Central Luzon" => "San Fernando, Pampanga",
+            "Mega Manila" => "Mega Manila",
+            _ => null
+        };
+
+        if (!string.IsNullOrWhiteSpace(matchingLocation))
+        {
+            LocationName = matchingLocation;
+            var (latitude, longitude) = CoordinatesForLocation(matchingLocation);
+            Latitude = latitude ?? Latitude;
+            Longitude = longitude ?? Longitude;
+        }
+    }
+
+    public static void ApplyLocation(string locationName, string? addressLine, decimal? latitude, decimal? longitude)
+    {
+        if (!string.IsNullOrWhiteSpace(locationName))
+        {
+            LocationName = locationName;
+            Region = RegionForLocation(locationName);
+        }
+
+        if (!string.IsNullOrWhiteSpace(addressLine))
+        {
+            AddressLine = addressLine;
+        }
+
+        Latitude = latitude ?? Latitude;
+        Longitude = longitude ?? Longitude;
+    }
+
+    public static string RegionForLocation(string? text)
+    {
+        var value = text?.ToLowerInvariant() ?? string.Empty;
+        if (value.Contains("san pedro") || value.Contains("laguna"))
+        {
+            return "San Pedro";
+        }
+        if (value.Contains("makati"))
+        {
+            return "Makati";
+        }
+        if (value.Contains("pasig"))
+        {
+            return "Pasig";
+        }
+        if (value.Contains("quezon"))
+        {
+            return "Quezon City";
+        }
+        if (value.Contains("baguio"))
+        {
+            return "Baguio";
+        }
+        if (value.Contains("cagayan"))
+        {
+            return "Cagayan de Oro";
+        }
+        if (value.Contains("cebu"))
+        {
+            return "Cebu";
+        }
+        if (value.Contains("naga") || value.Contains("legazpi"))
+        {
+            return "Naga and Legazpi";
+        }
+        if (value.Contains("pampanga") || value.Contains("bulacan") || value.Contains("tarlac") || value.Contains("central luzon"))
+        {
+            return "Central Luzon";
+        }
+
+        return "Mega Manila";
+    }
+
+    private static (decimal? Latitude, decimal? Longitude) CoordinatesForLocation(string locationName)
+    {
+        return locationName switch
         {
             "Makati Ave, Mega Manila" => (14.554729m, 121.024445m),
             "San Pedro, Laguna" => (14.358333m, 121.058333m),
             "Pasig City" => (14.576377m, 121.085110m),
             "Quezon City" => (14.676041m, 121.043700m),
+            "Baguio City" => (16.402333m, 120.596008m),
+            "Cagayan de Oro" => (8.454236m, 124.631897m),
+            "Cebu City" => (10.315699m, 123.885437m),
+            "Naga City" => (13.621775m, 123.194824m),
+            "San Fernando, Pampanga" => (15.033333m, 120.683333m),
+            "Mega Manila" => (14.599512m, 120.984222m),
             _ => (Latitude, Longitude)
         };
+    }
+}
+
+internal static class BookingFlowActions
+{
+    public static async Task<ServiceRequestDto> EnsureRequestAsync(bool attachMedia)
+    {
+        var customer = BookingDraft.Customer ?? await CustomerApiClient.GetCustomerAsync();
+        BookingDraft.Customer = customer;
+        if (BookingDraft.Services.Count == 0)
+        {
+            BookingDraft.Services = await CustomerApiClient.SearchServicesAsync();
+        }
+
+        var motorcycle = BookingDraft.SelectedMotorcycle();
+        var shopId = BookingDraft.SelectedShopId;
+        var shopServiceId = shopId is null ? null : BookingDraft.SelectedShopServiceId;
+        if (shopId is not null && shopServiceId is null)
+        {
+            shopServiceId = BookingDraft.Services.FirstOrDefault(x => x.ShopId == shopId)?.ShopServiceId;
+            BookingDraft.SelectedShopServiceId = shopServiceId;
+        }
+
+        ServiceRequestDto request;
+        if (BookingDraft.RequestId == 0)
+        {
+            request = await CustomerApiClient.CreateRequestAsync(new CreateServiceRequestDto(
+                shopId,
+                shopServiceId,
+                motorcycle?.MotorcycleId,
+                $"{BookingDraft.ProblemCategory}: {BookingDraft.OtherDetails}",
+                BookingDraft.AddressLine,
+                BookingDraft.Latitude,
+                BookingDraft.Longitude,
+                BookingDraft.ScheduledAt.ToUniversalTime()));
+            BookingDraft.RequestId = request.RequestId;
+        }
+        else
+        {
+            request = await CustomerApiClient.GetRequestAsync(BookingDraft.RequestId);
+        }
+
+        if (attachMedia && !BookingDraft.RequestMediaAttached)
+        {
+            if (!string.IsNullOrWhiteSpace(BookingDraft.ImageMediaUrl))
+            {
+                await CustomerApiClient.AttachRequestMediaAsync(BookingDraft.RequestId, new UploadMediaDto(BookingDraft.ImageMediaUrl, "image", "Customer issue picture"));
+            }
+
+            if (!string.IsNullOrWhiteSpace(BookingDraft.VideoMediaUrl))
+            {
+                await CustomerApiClient.AttachRequestMediaAsync(BookingDraft.RequestId, new UploadMediaDto(BookingDraft.VideoMediaUrl, "video", "Customer issue video"));
+            }
+
+            BookingDraft.RequestMediaAttached = true;
+        }
+
+        return request;
+    }
+
+    public static async Task<ServiceRequestDto> SelectShopAsync(int shopId, int? shopServiceId)
+    {
+        BookingDraft.SelectedShopId = shopId;
+        BookingDraft.SelectedShopServiceId = shopServiceId ?? BookingDraft.Services.FirstOrDefault(x => x.ShopId == shopId)?.ShopServiceId;
+        var request = await EnsureRequestAsync(false);
+        return await CustomerApiClient.SelectShopAsync(request.RequestId, new SelectShopDto(shopId, BookingDraft.SelectedShopServiceId));
     }
 }
 
@@ -146,7 +343,11 @@ internal static class BookingVisuals
     {
         var latText = latitude.ToString(CultureInfo.InvariantCulture);
         var lngText = longitude.ToString(CultureInfo.InvariantCulture);
-        var frameUrl = $"https://maps.google.com/maps?q={latText},{lngText}&z=15&output=embed";
+        var query = $"{latText},{lngText}";
+        var key = GoogleMapsEmbedKey();
+        var frameUrl = string.IsNullOrWhiteSpace(key)
+            ? $"https://maps.google.com/maps?q={Uri.EscapeDataString(query)}&z=15&output=embed"
+            : $"https://www.google.com/maps/embed/v1/place?key={Uri.EscapeDataString(key)}&q={Uri.EscapeDataString(query)}&zoom=15";
         return GoogleMapFrame(frameUrl);
     }
 
@@ -158,7 +359,10 @@ internal static class BookingVisuals
     {
         var origin = $"{originLatitude.ToString(CultureInfo.InvariantCulture)},{originLongitude.ToString(CultureInfo.InvariantCulture)}";
         var destination = $"{destinationLatitude.ToString(CultureInfo.InvariantCulture)},{destinationLongitude.ToString(CultureInfo.InvariantCulture)}";
-        var frameUrl = $"https://maps.google.com/maps?saddr={origin}&daddr={destination}&dirflg=d&output=embed";
+        var key = GoogleMapsEmbedKey();
+        var frameUrl = string.IsNullOrWhiteSpace(key)
+            ? $"https://maps.google.com/maps?saddr={Uri.EscapeDataString(origin)}&daddr={Uri.EscapeDataString(destination)}&dirflg=d&output=embed"
+            : $"https://www.google.com/maps/embed/v1/directions?key={Uri.EscapeDataString(key)}&origin={Uri.EscapeDataString(origin)}&destination={Uri.EscapeDataString(destination)}&mode=driving";
         return GoogleMapFrame(frameUrl);
     }
 
@@ -168,7 +372,7 @@ internal static class BookingVisuals
 
         return new HtmlWebViewSource
         {
-            BaseUrl = "https://maps.google.com",
+            BaseUrl = "https://www.google.com",
             Html = $$"""
 <!doctype html>
 <html>
@@ -192,6 +396,15 @@ internal static class BookingVisuals
 </html>
 """
         };
+    }
+
+    private static string GoogleMapsEmbedKey()
+    {
+#if ANDROID
+        return Android.App.Application.Context.GetString(Resource.String.google_maps_embed_key) ?? string.Empty;
+#else
+        return string.Empty;
+#endif
     }
 
     public static View FlowHeader(string title)
@@ -226,7 +439,7 @@ internal static class BookingVisuals
         {
             Text = title,
             TextColor = CustomerUi.Dark,
-            FontSize = 20,
+            FontSize = 18,
             FontAttributes = FontAttributes.Bold,
             LineBreakMode = LineBreakMode.TailTruncation
         });
@@ -245,7 +458,7 @@ internal static class BookingVisuals
         return new Label
         {
             Text = value,
-            FontSize = size,
+            FontSize = CustomerUi.SizeFor(size),
             TextColor = color ?? CustomerUi.Dark,
             FontAttributes = attributes,
             FontFamily = CustomerUi.FontFor(size, attributes),
@@ -261,7 +474,7 @@ internal static class BookingVisuals
             Command = command,
             BackgroundColor = CustomerUi.Orange,
             TextColor = Colors.White,
-            FontSize = 14,
+            FontSize = 13,
             CornerRadius = 8,
             HeightRequest = 48,
             FontAttributes = FontAttributes.Bold,
@@ -301,6 +514,60 @@ internal static class BookingVisuals
         var border = WhiteCard(grid, 8, new Thickness(12, 9));
         border.GestureRecognizers.Add(new TapGestureRecognizer { Command = command });
         return border;
+    }
+
+    public static View PickerRow(string label, IReadOnlyList<string> options, string? selected, Func<string, Task> onChanged)
+    {
+        var stack = new VerticalStackLayout { Spacing = 4 };
+        stack.Add(Text(label, 10, CustomerUi.Muted));
+
+        var picker = new Picker
+        {
+            Title = $"Select {label}",
+            FontSize = 13,
+            FontFamily = CustomerUi.FontBody,
+            TextColor = CustomerUi.Dark,
+            TitleColor = CustomerUi.Muted,
+            BackgroundColor = Colors.Transparent,
+            HorizontalOptions = LayoutOptions.Fill
+        };
+
+        var values = options
+            .Where(x => !string.IsNullOrWhiteSpace(x))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        if (!string.IsNullOrWhiteSpace(selected) && values.All(x => !string.Equals(x, selected, StringComparison.OrdinalIgnoreCase)))
+        {
+            values.Insert(0, selected);
+        }
+
+        foreach (var option in values)
+        {
+            picker.Items.Add(option);
+        }
+
+        picker.SelectedIndex = values.FindIndex(x => string.Equals(x, selected, StringComparison.OrdinalIgnoreCase));
+        var busy = false;
+        picker.SelectedIndexChanged += async (_, _) =>
+        {
+            if (busy || picker.SelectedIndex < 0 || picker.SelectedIndex >= picker.Items.Count)
+            {
+                return;
+            }
+
+            busy = true;
+            try
+            {
+                await onChanged(picker.Items[picker.SelectedIndex]);
+            }
+            finally
+            {
+                busy = false;
+            }
+        };
+
+        stack.Add(picker);
+        return WhiteCard(stack, 8, new Thickness(12, 8));
     }
 
     public static View MapPanel(double height, bool withLocateButton = false)
@@ -345,7 +612,7 @@ internal static class BookingVisuals
                 Text = "Access location",
                 BackgroundColor = CustomerUi.Orange,
                 TextColor = Colors.White,
-                FontSize = 10,
+                FontSize = 11,
                 CornerRadius = 18,
                 HeightRequest = 34,
                 HorizontalOptions = LayoutOptions.Fill,
@@ -377,7 +644,7 @@ internal static class BookingVisuals
                 TextColor = CustomerUi.Dark,
                 BorderColor = CustomerUi.Border,
                 BorderWidth = 1,
-                FontSize = 10,
+                FontSize = 11,
                 CornerRadius = 18,
                 HeightRequest = 34,
                 HorizontalOptions = LayoutOptions.Fill,
@@ -422,9 +689,8 @@ internal static class BookingVisuals
                 return false;
             }
 
-            BookingDraft.Latitude = (decimal)location.Latitude;
-            BookingDraft.Longitude = (decimal)location.Longitude;
-            BookingDraft.LocationName = "Current Location";
+            var locationName = "Current Location";
+            var addressLine = string.Empty;
 
             try
             {
@@ -435,23 +701,22 @@ internal static class BookingVisuals
                     var locality = string.Join(", ", new[] { place.Locality, place.AdminArea }.Where(x => !string.IsNullOrWhiteSpace(x)));
                     if (!string.IsNullOrWhiteSpace(locality))
                     {
-                        BookingDraft.LocationName = locality;
+                        locationName = locality;
                     }
 
-                    var address = string.Join(" ", new[] { place.SubThoroughfare, place.Thoroughfare }.Where(x => !string.IsNullOrWhiteSpace(x)));
-                    if (string.IsNullOrWhiteSpace(address))
+                    addressLine = string.Join(" ", new[] { place.SubThoroughfare, place.Thoroughfare }.Where(x => !string.IsNullOrWhiteSpace(x)));
+                    if (string.IsNullOrWhiteSpace(addressLine))
                     {
-                        address = place.FeatureName ?? place.SubLocality ?? BookingDraft.AddressLine;
+                        addressLine = place.FeatureName ?? place.SubLocality ?? BookingDraft.AddressLine;
                     }
-
-                    BookingDraft.AddressLine = address;
                 }
             }
             catch
             {
-                BookingDraft.AddressLine = $"Lat {location.Latitude:0.000000}, Lng {location.Longitude:0.000000}";
+                addressLine = $"Lat {location.Latitude:0.000000}, Lng {location.Longitude:0.000000}";
             }
 
+            BookingDraft.ApplyLocation(locationName, addressLine, (decimal)location.Latitude, (decimal)location.Longitude);
             return true;
         }
         catch (Exception ex)
@@ -530,7 +795,8 @@ internal static class BookingVisuals
             {
                 Text = string.IsNullOrWhiteSpace(uploadedUrl) ? "{    +    }" : icon,
                 TextColor = string.IsNullOrWhiteSpace(uploadedUrl) ? Color.FromArgb("#D7D7D7") : CustomerUi.Orange,
-                FontSize = string.IsNullOrWhiteSpace(uploadedUrl) ? 25 : 26,
+                FontSize = CustomerUi.TitleSize,
+                FontFamily = CustomerUi.FontDisplay,
                 HorizontalTextAlignment = TextAlignment.Center,
                 VerticalTextAlignment = TextAlignment.Center
             });
@@ -542,7 +808,7 @@ internal static class BookingVisuals
             {
                 Text = $"Selected video\n{System.IO.Path.GetFileName(previewPath)}",
                 TextColor = CustomerUi.Dark,
-                FontSize = 12,
+                FontSize = 13,
                 HorizontalTextAlignment = TextAlignment.Center,
                 VerticalTextAlignment = TextAlignment.Center
             });
@@ -553,7 +819,7 @@ internal static class BookingVisuals
             Text = string.IsNullOrWhiteSpace(uploadedUrl) ? "Upload" : "Replace",
             BackgroundColor = CustomerUi.Orange,
             TextColor = Colors.White,
-            FontSize = 10,
+            FontSize = 11,
             CornerRadius = 14,
             HeightRequest = 30,
             WidthRequest = 82,
@@ -578,101 +844,6 @@ internal static class BookingVisuals
     public static string Money(decimal amount)
     {
         return string.Format(CultureInfo.GetCultureInfo("en-PH"), "PHP {0:N0}", amount);
-    }
-}
-
-internal sealed class BookingOptionSheet : ContentPage
-{
-    private readonly TaskCompletionSource<string?> _selection = new();
-
-    private BookingOptionSheet(string title, IReadOnlyList<string> options, string? selected)
-    {
-        Shell.SetNavBarIsVisible(this, false);
-        BackgroundColor = Color.FromRgba(0, 0, 0, 0.35);
-
-        var list = new VerticalStackLayout { Spacing = 0 };
-        list.Add(new Label
-        {
-            Text = title,
-            TextColor = CustomerUi.Orange,
-            FontSize = 12,
-            FontAttributes = FontAttributes.Bold,
-            Padding = new Thickness(12, 12, 12, 8)
-        });
-
-        foreach (var option in options)
-        {
-            var row = new Grid
-            {
-                Padding = new Thickness(12, 11),
-                BackgroundColor = Color.FromArgb("#F2F2F6"),
-                ColumnDefinitions =
-                {
-                    new ColumnDefinition(GridLength.Star),
-                    new ColumnDefinition(GridLength.Auto)
-                }
-            };
-            row.Add(new Label
-            {
-                Text = option,
-                TextColor = string.Equals(option, selected, StringComparison.OrdinalIgnoreCase) ? CustomerUi.Orange : CustomerUi.Muted,
-                FontSize = 11,
-                VerticalTextAlignment = TextAlignment.Center
-            }, 0, 0);
-            row.Add(new Label
-            {
-                Text = string.Equals(option, selected, StringComparison.OrdinalIgnoreCase) ? "[x]" : "[ ]",
-                TextColor = CustomerUi.Muted,
-                FontSize = 12
-            }, 1, 0);
-            row.GestureRecognizers.Add(new TapGestureRecognizer
-            {
-                Command = new Command(async () =>
-                {
-                    _selection.TrySetResult(option);
-                    await Navigation.PopModalAsync();
-                })
-            });
-            list.Add(row);
-        }
-
-        var cancel = new Button
-        {
-            Text = "Cancel",
-            BackgroundColor = Colors.White,
-            TextColor = CustomerUi.Muted,
-            FontSize = 12,
-            HeightRequest = 42,
-            Command = new Command(async () =>
-            {
-                _selection.TrySetResult(null);
-                await Navigation.PopModalAsync();
-            })
-        };
-        list.Add(cancel);
-
-        Content = new Grid
-        {
-            Padding = new Thickness(14, 0, 14, 30),
-            VerticalOptions = LayoutOptions.End,
-            Children =
-            {
-                new Border
-                {
-                    Stroke = Colors.Transparent,
-                    StrokeShape = new RoundRectangle { CornerRadius = 4 },
-                    BackgroundColor = Colors.White,
-                    Content = list
-                }
-            }
-        };
-    }
-
-    public static async Task<string?> ShowAsync(string title, IReadOnlyList<string> options, string? selected)
-    {
-        var sheet = new BookingOptionSheet(title, options, selected);
-        await Shell.Current.Navigation.PushModalAsync(sheet);
-        return await sheet._selection.Task;
     }
 }
 
@@ -804,9 +975,31 @@ public sealed class BookingFillUpPage : CustomerPageBase
             body.Add(BookingVisuals.WhiteCard(BookingVisuals.Text(banner, 11, CustomerUi.Muted)));
         }
 
-        body.Add(BookingVisuals.FieldRow("Brand", BookingDraft.Brand, new Command(async () => await SelectBrandAsync())));
-        body.Add(BookingVisuals.FieldRow("Model", BookingDraft.Model, new Command(async () => await SelectModelAsync())));
-        body.Add(BookingVisuals.FieldRow("Problem Category", BookingDraft.ProblemCategory, new Command(async () => await SelectProblemAsync())));
+        body.Add(BookingVisuals.PickerRow("Brand", BrandOptions(), BookingDraft.Brand, selected =>
+        {
+            BookingDraft.Brand = selected;
+            var model = BookingDraft.Customer?.Motorcycles.FirstOrDefault(x => x.Brand == selected)?.Model;
+            if (!string.IsNullOrWhiteSpace(model))
+            {
+                BookingDraft.Model = model;
+            }
+
+            Render();
+            return Task.CompletedTask;
+        }));
+        body.Add(BookingVisuals.PickerRow("Model", ModelOptions(), BookingDraft.Model, selected =>
+        {
+            BookingDraft.Model = selected;
+            Render();
+            return Task.CompletedTask;
+        }));
+        body.Add(BookingVisuals.PickerRow("Problem Category", ProblemOptions(), BookingDraft.ProblemCategory, selected =>
+        {
+            BookingDraft.ProblemCategory = selected;
+            BookingDraft.SelectedShopServiceId = BookingDraft.SelectedService()?.ShopServiceId;
+            Render();
+            return Task.CompletedTask;
+        }));
 
         _detailsEditor = new Editor
         {
@@ -830,66 +1023,39 @@ public sealed class BookingFillUpPage : CustomerPageBase
         SetScaffold(new ScrollView { Content = body }, "Home", false);
     }
 
-    private async Task SelectBrandAsync()
+    private static IReadOnlyList<string> BrandOptions()
     {
         var brands = BookingDraft.Customer?.Motorcycles.Select(x => x.Brand).Distinct().ToArray();
-        if (brands is null || brands.Length == 0)
-        {
-            brands = ["Trek", "Specialized", "Giant", "Merida", "Cannondale", "Scott", "Honda"];
-        }
-
-        var selected = await BookingOptionSheet.ShowAsync("Select Brand", brands, BookingDraft.Brand);
-        if (!string.IsNullOrWhiteSpace(selected))
-        {
-            BookingDraft.Brand = selected;
-            var model = BookingDraft.Customer?.Motorcycles.FirstOrDefault(x => x.Brand == selected)?.Model;
-            if (!string.IsNullOrWhiteSpace(model))
-            {
-                BookingDraft.Model = model;
-            }
-            Render();
-        }
+        return brands is { Length: > 0 }
+            ? brands
+            : ["Trek", "Specialized", "Giant", "Merida", "Cannondale", "Scott", "Honda"];
     }
 
-    private async Task SelectModelAsync()
+    private static IReadOnlyList<string> ModelOptions()
     {
         var models = BookingDraft.Customer?.Motorcycles
             .Where(x => string.Equals(x.Brand, BookingDraft.Brand, StringComparison.OrdinalIgnoreCase))
             .Select(x => x.Model)
             .Distinct()
             .ToArray();
-        if (models is null || models.Length == 0)
-        {
-            models = ["Specialized Tarmac SL8", "Factor OSTRO VAM", "Scott Addict RC", "Dt. Swiss 6 1800", "Trek Domane", "Specialized Roubaix", "Click 125i"];
-        }
-
-        var selected = await BookingOptionSheet.ShowAsync("Select Model", models, BookingDraft.Model);
-        if (!string.IsNullOrWhiteSpace(selected))
-        {
-            BookingDraft.Model = selected;
-            Render();
-        }
+        return models is { Length: > 0 }
+            ? models
+            : ["Specialized Tarmac SL8", "Factor OSTRO VAM", "Scott Addict RC", "Dt. Swiss 6 1800", "Trek Domane", "Specialized Roubaix", "Click 125i"];
     }
 
-    private async Task SelectProblemAsync()
+    private static IReadOnlyList<string> ProblemOptions()
     {
-        var options = new[]
-        {
+        return
+        [
             "Tire Problem",
             "Brake Adjustment",
             "Gear Shifting Issue",
             "Accessory Installation",
             "Chain Maintenance",
             "General Tune-up"
-        };
-        var selected = await BookingOptionSheet.ShowAsync("Select Problem Category", options, BookingDraft.ProblemCategory);
-        if (!string.IsNullOrWhiteSpace(selected))
-        {
-            BookingDraft.ProblemCategory = selected;
-            BookingDraft.SelectedShopServiceId = BookingDraft.SelectedService()?.ShopServiceId;
-            Render();
-        }
+        ];
     }
+
 }
 
 public sealed class BookingServiceTypePage : CustomerPageBase
@@ -938,7 +1104,7 @@ public sealed class BookingServiceTypePage : CustomerPageBase
         {
             Text = "No problem! Share your bike issue, and we'll suggest the best service for you.",
             TextColor = CustomerUi.Muted,
-            FontSize = 10,
+            FontSize = 11,
             HorizontalTextAlignment = TextAlignment.Center
         });
         body.Add(BookingVisuals.PrimaryButton("Continue", new Command(async () => await Shell.Current.GoToAsync(nameof(BookingSchedulePage)))));
@@ -961,7 +1127,7 @@ public sealed class BookingServiceTypePage : CustomerPageBase
         {
             Text = selected ? "(o)" : "( )",
             TextColor = CustomerUi.Orange,
-            FontSize = 17,
+            FontSize = 18,
             VerticalTextAlignment = TextAlignment.Center
         }, 0, 0);
         var text = new VerticalStackLayout { Spacing = 2, Margin = new Thickness(8, 0, 0, 0) };
@@ -1002,10 +1168,24 @@ public sealed class BookingSchedulePage : CustomerPageBase
         var body = new VerticalStackLayout { Padding = new Thickness(14, 0, 14, 16), Spacing = 14 };
         body.Add(BookingVisuals.FlowHeader("Scheduling"));
         body.Add(CalendarCard());
-        body.Add(BookingVisuals.FieldRow("Time", BookingDraft.ScheduledAt.ToString("h:mm tt", CultureInfo.InvariantCulture), new Command(async () => await SelectTimeAsync())));
+        body.Add(BookingVisuals.PickerRow("Time", TimeOptions(), BookingDraft.ScheduledAt.ToString("h:mm tt", CultureInfo.InvariantCulture), selected =>
+        {
+            if (DateTime.TryParse(selected, CultureInfo.InvariantCulture, out var parsed))
+            {
+                BookingDraft.ScheduledAt = BookingDraft.ScheduledAt.Date.Add(parsed.TimeOfDay);
+                Render();
+            }
+
+            return Task.CompletedTask;
+        }));
         body.Add(new BoxView { HeightRequest = 64, Opacity = 0 });
         body.Add(BookingVisuals.PrimaryButton("Continue", new Command(async () => await Shell.Current.GoToAsync(nameof(BookingUploadPage)))));
         SetScaffold(new ScrollView { Content = body }, "Home", false);
+    }
+
+    private static IReadOnlyList<string> TimeOptions()
+    {
+        return ["7:00 AM", "8:30 AM", "10:00 AM", "1:30 PM", "3:00 PM", "5:00 PM"];
     }
 
     private View CalendarCard()
@@ -1055,7 +1235,7 @@ public sealed class BookingSchedulePage : CustomerPageBase
             var label = new Label
             {
                 Text = date.Day.ToString(CultureInfo.InvariantCulture),
-                FontSize = 10,
+                FontSize = 11,
                 TextColor = selected ? Colors.White : date.Month == month.Month ? CustomerUi.Dark : Color.FromArgb("#C8C8C8"),
                 HorizontalTextAlignment = TextAlignment.Center,
                 VerticalTextAlignment = TextAlignment.Center
@@ -1143,15 +1323,8 @@ public sealed class BookingUploadPage : CustomerPageBase
             }
 
             var previewPath = await CopyPickedFileToCacheAsync(result, mediaType);
-            var uploadUrl = previewPath;
-            try
-            {
-                uploadUrl = await CustomerApiClient.CreatePlaceholderFileAsync(new UploadMediaDto(result.FileName, mediaType, $"Booking {mediaType}"));
-            }
-            catch
-            {
-                uploadUrl = $"local://{result.FileName}";
-            }
+            var uploaded = await CustomerApiClient.UploadFileAsync(result, "booking");
+            var uploadUrl = uploaded.Url;
 
             if (mediaType == "image")
             {
@@ -1241,9 +1414,10 @@ public sealed class BookingConfirmationPage : CustomerPageBase
         body.Add(SummaryLine("Device Info", $"Brand: {BookingDraft.Brand}\nModel: {BookingDraft.Model}"));
         body.Add(SummaryLine("Issue", $"Problem Category: {BookingDraft.ProblemCategory}\nOther Details: {BookingDraft.OtherDetails}"));
         body.Add(SummaryLine("Service", $"Service Type: {BookingDraft.ServiceType}\nSchedule: {BookingDraft.ScheduledAt:MM/dd/yyyy}\nTime: {BookingDraft.ScheduledAt:h:mm tt}"));
-        body.Add(SummaryLine("Estimated Total", BookingVisuals.Money(service?.BasePrice ?? 0m)));
+        body.Add(SummaryLine("Repair Shop", BookingDraft.SelectedShopId is null ? "Choose a shop next" : "Shop selected"));
+        body.Add(SummaryLine("Estimated Total", BookingDraft.SelectedShopId is null ? "Set by the selected shop service" : BookingVisuals.Money(service?.BasePrice ?? 0m)));
         body.Add(new BoxView { HeightRequest = 28, Opacity = 0 });
-        body.Add(BookingVisuals.PrimaryButton("Continue to payments", new Command(async () => await ContinueAsync())));
+        body.Add(BookingVisuals.PrimaryButton("Find repair shop", new Command(async () => await ContinueAsync())));
 
         SetScaffold(new ScrollView { Content = body }, "Home", false);
     }
@@ -1260,38 +1434,8 @@ public sealed class BookingConfirmationPage : CustomerPageBase
     {
         try
         {
-            var customer = BookingDraft.Customer ?? await CustomerApiClient.GetCustomerAsync();
-            BookingDraft.Customer = customer;
-            var service = BookingDraft.SelectedService();
-            var motorcycle = BookingDraft.SelectedMotorcycle();
-
-            if (BookingDraft.RequestId == 0)
-            {
-                var request = await CustomerApiClient.CreateRequestAsync(new CreateServiceRequestDto(
-                    service?.ShopId,
-                    service?.ShopServiceId,
-                    motorcycle?.MotorcycleId,
-                    $"{BookingDraft.ProblemCategory}: {BookingDraft.OtherDetails}",
-                    BookingDraft.AddressLine,
-                    BookingDraft.Latitude,
-                    BookingDraft.Longitude,
-                    BookingDraft.ScheduledAt.ToUniversalTime()));
-                BookingDraft.RequestId = request.RequestId;
-                BookingDraft.SelectedShopId = service?.ShopId;
-                BookingDraft.SelectedShopServiceId = service?.ShopServiceId;
-            }
-
-            if (!string.IsNullOrWhiteSpace(BookingDraft.ImageMediaUrl))
-            {
-                await CustomerApiClient.AttachRequestMediaAsync(BookingDraft.RequestId, new UploadMediaDto(BookingDraft.ImageMediaUrl, "image", "Customer issue picture"));
-            }
-
-            if (!string.IsNullOrWhiteSpace(BookingDraft.VideoMediaUrl))
-            {
-                await CustomerApiClient.AttachRequestMediaAsync(BookingDraft.RequestId, new UploadMediaDto(BookingDraft.VideoMediaUrl, "video", "Customer issue video"));
-            }
-
-            await Shell.Current.GoToAsync(nameof(PaymentOptionsPage));
+            await BookingFlowActions.EnsureRequestAsync(true);
+            await Shell.Current.GoToAsync(nameof(BookingSearchShopPage));
         }
         catch (Exception ex)
         {
@@ -1424,7 +1568,7 @@ public sealed class StoreSelectionPage : CustomerPageBase
             Text = "Back",
             BackgroundColor = Colors.Transparent,
             TextColor = CustomerUi.Dark,
-            FontSize = 12,
+            FontSize = 13,
             WidthRequest = 56,
             HeightRequest = 40,
             CornerRadius = 20,
@@ -1435,7 +1579,7 @@ public sealed class StoreSelectionPage : CustomerPageBase
         {
             Text = "Choose a store",
             TextColor = CustomerUi.Dark,
-            FontSize = 15,
+            FontSize = 13,
             FontAttributes = FontAttributes.Bold,
             HorizontalTextAlignment = TextAlignment.Center,
             VerticalTextAlignment = TextAlignment.Center
@@ -1489,7 +1633,7 @@ public sealed class StoreSelectionPage : CustomerPageBase
             Text = "View Profile",
             BackgroundColor = CustomerUi.Orange,
             TextColor = Colors.White,
-            FontSize = 9,
+            FontSize = 11,
             CornerRadius = 6,
             HeightRequest = 32,
             Command = new Command(async () =>
@@ -1509,7 +1653,7 @@ public sealed class StoreSelectionPage : CustomerPageBase
             Text = "Book here!",
             BackgroundColor = Color.FromArgb("#22A447"),
             TextColor = Colors.White,
-            FontSize = 9,
+            FontSize = 11,
             CornerRadius = 6,
             HeightRequest = 32,
             Command = new Command(async () => await BookHereAsync(shop?.ShopId, service?.ShopServiceId))
@@ -1525,15 +1669,10 @@ public sealed class StoreSelectionPage : CustomerPageBase
         {
             if (shopId is not null)
             {
-                BookingDraft.SelectedShopId = shopId;
-                BookingDraft.SelectedShopServiceId = serviceId ?? BookingDraft.SelectedShopServiceId;
-                if (BookingDraft.RequestId > 0)
-                {
-                    await CustomerApiClient.SelectShopAsync(BookingDraft.RequestId, new SelectShopDto(shopId.Value, BookingDraft.SelectedShopServiceId));
-                }
+                await BookingFlowActions.SelectShopAsync(shopId.Value, serviceId ?? BookingDraft.SelectedShopServiceId);
             }
 
-            await DisplayAlertAsync("Repair Shop Found", "You can choose your desired repair shop to do the job for you.", "Ok");
+            await DisplayAlertAsync("Repair shop selected", "Choose the exact service on the shop profile before payment.", "OK");
             await Shell.Current.GoToAsync(shopId is null ? nameof(StoreDetailsPage) : $"{nameof(StoreDetailsPage)}?shopId={shopId}");
         }
         catch (Exception ex)
@@ -1574,7 +1713,10 @@ public sealed class StoreDetailsPage : CustomerPageBase, IQueryAttributable
             {
                 _shop = await CustomerApiClient.GetShopDetailsAsync(_shopId);
                 _services = await CustomerApiClient.GetShopServicesAsync(_shopId);
-                BookingDraft.SelectedShopServiceId ??= _services.FirstOrDefault()?.ShopServiceId;
+                if (BookingDraft.SelectedShopServiceId is null || _services.All(x => x.ShopServiceId != BookingDraft.SelectedShopServiceId))
+                {
+                    BookingDraft.SelectedShopServiceId = _services.FirstOrDefault()?.ShopServiceId;
+                }
             }
             Render();
         }
@@ -1602,20 +1744,92 @@ public sealed class StoreDetailsPage : CustomerPageBase, IQueryAttributable
         body.Add(BookingVisuals.Text(shopName, 13, CustomerUi.Dark, FontAttributes.Bold));
         body.Add(BookingVisuals.Text("4.9 stars in the business", 10, Color.FromArgb("#22A447")));
         body.Add(BookingVisuals.Text($"{shopName} is your trusted local bike workshop. Specializing in professional bicycle repairs, maintenance, and upgrades at affordable prices.", 10, CustomerUi.Dark));
-        body.Add(BookingVisuals.PrimaryButton("View Top Technician", new Command(async () => await Shell.Current.GoToAsync(nameof(TaskerProfilePage)))));
+        body.Add(BookingVisuals.PrimaryButton("View Top Technician", new Command(async () => await ContinueToTechnicianAsync())));
         body.Add(BookingVisuals.Text("Store Hours", 11, CustomerUi.Dark, FontAttributes.Bold));
         body.Add(BookingVisuals.Text("Monday - Saturday: 9:00 AM - 7:00 PM\nSunday: Closed", 10, CustomerUi.Dark));
         body.Add(BookingVisuals.Text($"Address\n{address}", 11, CustomerUi.Dark, FontAttributes.Bold));
         body.Add(BookingVisuals.Text("Services Offered", 11, CustomerUi.Dark, FontAttributes.Bold));
-        var serviceText = _services.Count == 0
-            ? "- Basic & Gear Adjustments\n- Wheel Truing & Spoke Replacement\n- Full Suspension Service\n- Bottom Bracket & Headset Maintenance"
-            : string.Join("\n", _services.Take(5).Select(x => $"- {x.ServiceName} - {BookingVisuals.Money(x.BasePrice)}"));
-        body.Add(BookingVisuals.Text(serviceText, 10, CustomerUi.Dark));
+        if (_services.Count == 0)
+        {
+            body.Add(BookingVisuals.WhiteCard(BookingVisuals.Text("No active services are available from this shop yet.", 11, CustomerUi.Muted), 4, new Thickness(10)));
+        }
+        else
+        {
+            foreach (var service in _services.Take(6))
+            {
+                body.Add(ServiceChoice(service));
+            }
+        }
+
         body.Add(BookingVisuals.Text("Contact Us\nMobile: 0912 345 6789\nLandline: (02) 8123 4567\nEmail: ee.repairshop@gmail.com", 10, CustomerUi.Dark));
         body.Add(BookingVisuals.PrimaryButton("Like what you see?", new Command(async () => await DisplayAlertAsync("Booking Popup", "Successfully added to favorites", "Ok"))));
-        body.Add(BookingVisuals.PrimaryButton("Continue", new Command(async () => await Shell.Current.GoToAsync(nameof(TaskerProfilePage)))));
+        body.Add(BookingVisuals.PrimaryButton("Continue to technician", new Command(async () => await ContinueToTechnicianAsync())));
 
         SetScaffold(new ScrollView { Content = body }, "Home", false);
+    }
+
+    private View ServiceChoice(ShopServiceDto service)
+    {
+        var selected = BookingDraft.SelectedShopServiceId == service.ShopServiceId;
+        var grid = new Grid
+        {
+            ColumnDefinitions =
+            {
+                new ColumnDefinition(GridLength.Auto),
+                new ColumnDefinition(GridLength.Star),
+                new ColumnDefinition(GridLength.Auto)
+            },
+            ColumnSpacing = 8
+        };
+        grid.Add(BookingVisuals.Text(selected ? "(o)" : "( )", 13, CustomerUi.Orange, FontAttributes.Bold), 0, 0);
+        var text = new VerticalStackLayout { Spacing = 2 };
+        text.Add(BookingVisuals.Text(service.ServiceName, 13, CustomerUi.Dark, FontAttributes.Bold));
+        text.Add(BookingVisuals.Text($"{service.CategoryName} - {service.EstimatedMinutes} min", 11, CustomerUi.Muted));
+        if (!string.IsNullOrWhiteSpace(service.ServiceDescription))
+        {
+            text.Add(BookingVisuals.Text(service.ServiceDescription, 11, CustomerUi.Muted));
+        }
+
+        grid.Add(text, 1, 0);
+        grid.Add(BookingVisuals.Text(BookingVisuals.Money(service.BasePrice), 13, CustomerUi.Orange, FontAttributes.Bold), 2, 0);
+        var card = BookingVisuals.WhiteCard(grid, 4, new Thickness(10));
+        card.BackgroundColor = selected ? Color.FromArgb("#FFF2EC") : Colors.White;
+        card.GestureRecognizers.Add(new TapGestureRecognizer
+        {
+            Command = new Command(() =>
+            {
+                BookingDraft.SelectedShopServiceId = service.ShopServiceId;
+                Render();
+            })
+        });
+        return card;
+    }
+
+    private async Task ContinueToTechnicianAsync()
+    {
+        try
+        {
+            if (_shopId <= 0)
+            {
+                await DisplayAlertAsync("Choose a shop", "Select a repair shop before continuing.", "OK");
+                await Shell.Current.GoToAsync(nameof(StoreSelectionPage));
+                return;
+            }
+
+            var serviceId = BookingDraft.SelectedShopServiceId ?? _services.FirstOrDefault()?.ShopServiceId;
+            if (serviceId is null)
+            {
+                await DisplayAlertAsync("Choose a service", "Select an available service before payment.", "OK");
+                return;
+            }
+
+            await BookingFlowActions.SelectShopAsync(_shopId, serviceId);
+            await Shell.Current.GoToAsync(nameof(TaskerProfilePage));
+        }
+        catch (Exception ex)
+        {
+            await DisplayAlertAsync("Shop selection failed", ex.Message, "OK");
+        }
     }
 }
 
@@ -1661,30 +1875,45 @@ public sealed class TaskerProfilePage : CustomerPageBase
             Aspect = Aspect.AspectFill,
             HorizontalOptions = LayoutOptions.Center
         });
-        body.Add(new Label { Text = name, TextColor = CustomerUi.Dark, FontAttributes = FontAttributes.Bold, FontSize = 16, HorizontalTextAlignment = TextAlignment.Center });
+        body.Add(new Label { Text = name, TextColor = CustomerUi.Dark, FontAttributes = FontAttributes.Bold, FontSize = 18, HorizontalTextAlignment = TextAlignment.Center });
         body.Add(new Label { Text = "Bike Expert", TextColor = CustomerUi.Orange, FontSize = 11, HorizontalTextAlignment = TextAlignment.Center });
         body.Add(ProfileStats(_mechanic));
         body.Add(BookingVisuals.Text("Experience & Specialties", 12, CustomerUi.Dark, FontAttributes.Bold));
-        body.Add(BookingVisuals.Text($"Hi, I'm {name.Split(' ').FirstOrDefault() ?? "Steve"}, with over {_mechanic?.YearsExperience ?? 5} years of experience in expert laptop repair and reliable pickup/delivery service.", 10, CustomerUi.Dark));
+        body.Add(BookingVisuals.Text($"Hi, I'm {name.Split(' ').FirstOrDefault() ?? "your technician"}, with over {_mechanic?.YearsExperience ?? 5} years of motorcycle roadside and service repair experience.", 10, CustomerUi.Dark));
         body.Add(BookingVisuals.Text("Customer Ratings", 12, CustomerUi.Dark, FontAttributes.Bold));
         body.Add(BookingVisuals.Text($"{(_mechanic?.AverageRating ?? 4.9m):0.0}  *****\nBased on {Math.Max(_mechanic?.TotalCompletedJobs ?? 20, 20)} ratings", 11, CustomerUi.Dark));
         body.Add(RatingBar("Work quality", 4.9));
         body.Add(RatingBar("Reliability", 4.9));
         body.Add(RatingBar("Punctuality", 4.8));
         body.Add(RatingBar("Solution", 5.0));
-        body.Add(RatingBar("Payout", 4.5));
+        body.Add(RatingBar("Value", 4.5));
         body.Add(BookingVisuals.Text("Customer Reviews", 12, CustomerUi.Dark, FontAttributes.Bold));
-        body.Add(ReviewRow("Nicole", "Has booking the task was quick and easy. The professional arrived on time and left no gravel.", "*****"));
-        body.Add(ReviewRow("David", "Booking was quick and easy but overpriced.", "****-"));
-        body.Add(BookingVisuals.PrimaryButton("Continue", new Command(async () => await ConfirmRiderAsync())));
+        body.Add(ReviewRow("Nicole", "Booking was quick and the technician arrived on time.", "*****"));
+        body.Add(ReviewRow("David", "Clear updates and careful repair work.", "****-"));
+        body.Add(BookingVisuals.PrimaryButton("Continue to payment", new Command(async () => await ConfirmRiderAsync())));
 
         SetScaffold(new ScrollView { Content = body }, "Home", false);
     }
 
     private async Task ConfirmRiderAsync()
     {
-        await DisplayAlertAsync("Booking Successful", "The technician will be shortly in your house soon.", "Ok");
-        await Shell.Current.GoToAsync(nameof(BookingTrackMapPage));
+        try
+        {
+            if (BookingDraft.SelectedShopId is null || BookingDraft.SelectedShopServiceId is null)
+            {
+                await DisplayAlertAsync("Choose a service", "Select a repair shop and service before payment.", "OK");
+                await Shell.Current.GoToAsync(nameof(StoreSelectionPage));
+                return;
+            }
+
+            await BookingFlowActions.SelectShopAsync(BookingDraft.SelectedShopId.Value, BookingDraft.SelectedShopServiceId);
+            await DisplayAlertAsync("Ready for payment", "Your shop and service are set. Complete secure payment to confirm tracking.", "OK");
+            await Shell.Current.GoToAsync(nameof(PaymentOptionsPage));
+        }
+        catch (Exception ex)
+        {
+            await DisplayAlertAsync("Booking update failed", ex.Message, "OK");
+        }
     }
 
     private static View ProfileStats(MechanicProfileDto? mechanic)
@@ -1711,8 +1940,8 @@ public sealed class TaskerProfilePage : CustomerPageBase
             Spacing = 2,
             Children =
             {
-                new Label { Text = value, TextColor = CustomerUi.Dark, FontSize = 12, FontAttributes = FontAttributes.Bold, HorizontalTextAlignment = TextAlignment.Center },
-                new Label { Text = label, TextColor = CustomerUi.Muted, FontSize = 9, HorizontalTextAlignment = TextAlignment.Center }
+                new Label { Text = value, TextColor = CustomerUi.Dark, FontSize = 13, FontAttributes = FontAttributes.Bold, HorizontalTextAlignment = TextAlignment.Center },
+                new Label { Text = label, TextColor = CustomerUi.Muted, FontSize = 11, HorizontalTextAlignment = TextAlignment.Center }
             }
         };
     }
@@ -1760,6 +1989,11 @@ public sealed class BookingTrackMapPage : CustomerPageBase
             if (BookingDraft.RequestId > 0)
             {
                 _request = await CustomerApiClient.GetRequestAsync(BookingDraft.RequestId);
+                if (!await CustomerPaymentGate.EnsurePaidOrRedirectAsync(this, BookingDraft.RequestId))
+                {
+                    return;
+                }
+
                 _location = await CustomerApiClient.GetLatestRequestLocationAsync(BookingDraft.RequestId);
             }
             Render();
@@ -1800,7 +2034,7 @@ public sealed class BookingTrackMapPage : CustomerPageBase
             Text = _location is null ? "Waiting for rider live location" : "Rider to service location",
             TextColor = Color.FromArgb("#503CFF"),
             BackgroundColor = Color.FromRgba(255, 255, 255, 0.86),
-            FontSize = 12,
+            FontSize = 13,
             Padding = new Thickness(10, 6),
             HorizontalTextAlignment = TextAlignment.Center,
             VerticalTextAlignment = TextAlignment.Center,
@@ -1840,7 +2074,7 @@ public sealed class BookingTrackMapPage : CustomerPageBase
             Content = new Label
             {
                 Text = _location is null ? "Waiting" : "On map",
-                FontSize = 10,
+                FontSize = 11,
                 TextColor = _location is null ? CustomerUi.Muted : Color.FromArgb("#167A3A"),
                 FontAttributes = FontAttributes.Bold
             }
@@ -2134,7 +2368,7 @@ public sealed class BookingRatingPage : CustomerPageBase
 
         var card = new VerticalStackLayout { Padding = new Thickness(14, 22), Spacing = 12 };
         card.Add(new Label { Text = "Gregory Smith\nNadia's Repair", TextColor = CustomerUi.Dark, FontSize = 11, HorizontalTextAlignment = TextAlignment.Center });
-        card.Add(new Label { Text = "How is your repair?", TextColor = CustomerUi.Dark, FontSize = 20, HorizontalTextAlignment = TextAlignment.Center });
+        card.Add(new Label { Text = "How is your repair?", TextColor = CustomerUi.Dark, FontSize = 18, HorizontalTextAlignment = TextAlignment.Center });
         card.Add(new Label { Text = "Your feedback will help improve\nthe experience", TextColor = CustomerUi.Muted, FontSize = 11, HorizontalTextAlignment = TextAlignment.Center });
         card.Add(Stars());
         _commentEditor = new Editor
@@ -2169,7 +2403,7 @@ public sealed class BookingRatingPage : CustomerPageBase
                 Text = i <= _rating ? "*" : "-",
                 TextColor = Color.FromArgb("#FFC107"),
                 BackgroundColor = Colors.Transparent,
-                FontSize = 30,
+                FontSize = 18,
                 WidthRequest = 42,
                 HeightRequest = 42,
                 Padding = new Thickness(0),

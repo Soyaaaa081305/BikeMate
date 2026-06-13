@@ -13,7 +13,7 @@ public sealed class PasswordResetPage : CustomerPageBase, IQueryAttributable
     private string _newPassword = "";
     private string _confirmPassword = "";
     private string? _banner;
-    private bool _codeSent;
+    private int _step;
     private bool _isBusy;
 
     public PasswordResetPage()
@@ -57,7 +57,13 @@ public sealed class PasswordResetPage : CustomerPageBase, IQueryAttributable
             body.Add(Card(Label(_banner, 12, CustomerUi.Muted), Colors.White, 8, new Thickness(12)));
         }
 
-        body.Add(_codeSent ? BuildPasswordStep() : BuildEmailStep());
+        body.Add(_step switch
+        {
+            0 => BuildEmailStep(),
+            1 => BuildCodeStep(),
+            2 => BuildPasswordStep(),
+            _ => BuildSuccessStep()
+        });
         SetScaffold(new ScrollView { Content = body }, "Home", false);
     }
 
@@ -67,9 +73,9 @@ public sealed class PasswordResetPage : CustomerPageBase, IQueryAttributable
         grid.ColumnDefinitions.Add(new ColumnDefinition(GridLength.Star));
         grid.ColumnDefinitions.Add(new ColumnDefinition(GridLength.Star));
         grid.ColumnDefinitions.Add(new ColumnDefinition(GridLength.Star));
-        grid.Add(StepPill("1 Email", true), 0, 0);
-        grid.Add(StepPill("2 Code", _codeSent), 1, 0);
-        grid.Add(StepPill("3 Password", _codeSent), 2, 0);
+        grid.Add(StepPill("1 Email", _step >= 0), 0, 0);
+        grid.Add(StepPill("2 Code", _step >= 1), 1, 0);
+        grid.Add(StepPill("3 Password", _step >= 2), 2, 0);
         return grid;
     }
 
@@ -85,7 +91,7 @@ public sealed class PasswordResetPage : CustomerPageBase, IQueryAttributable
             {
                 Text = text,
                 TextColor = active ? CustomerUi.Orange : CustomerUi.Muted,
-                FontSize = 10,
+                FontSize = 11,
                 FontAttributes = FontAttributes.Bold,
                 FontFamily = CustomerUi.FontCaptionBold,
                 HorizontalTextAlignment = TextAlignment.Center,
@@ -114,7 +120,7 @@ public sealed class PasswordResetPage : CustomerPageBase, IQueryAttributable
         return Card(stack, Colors.White, 8, new Thickness(14));
     }
 
-    private View BuildPasswordStep()
+    private View BuildCodeStep()
     {
         var code = new Entry
         {
@@ -128,6 +134,16 @@ public sealed class PasswordResetPage : CustomerPageBase, IQueryAttributable
         };
         code.TextChanged += (_, e) => _code = e.NewTextValue ?? "";
 
+        var stack = new VerticalStackLayout { Spacing = 12 };
+        stack.Add(Label($"Enter the code sent to {_email}", 14, CustomerUi.Dark, FontAttributes.Bold));
+        stack.Add(Card(code, Colors.White, 8, new Thickness(12, 2)));
+        stack.Add(OrangeButton(_isBusy ? "Checking code..." : "Verify code", new Command(async () => await VerifyCodeAsync())));
+        stack.Add(GhostButton("Resend code", new Command(async () => await ResendCodeAsync())));
+        return Card(stack, Colors.White, 8, new Thickness(14));
+    }
+
+    private View BuildPasswordStep()
+    {
         var password = new Entry
         {
             Placeholder = "New password",
@@ -151,13 +167,31 @@ public sealed class PasswordResetPage : CustomerPageBase, IQueryAttributable
         confirm.TextChanged += (_, e) => _confirmPassword = e.NewTextValue ?? "";
 
         var stack = new VerticalStackLayout { Spacing = 12 };
-        stack.Add(Label($"Code sent to {_email}", 14, CustomerUi.Dark, FontAttributes.Bold));
-        stack.Add(Card(code, Colors.White, 8, new Thickness(12, 2)));
+        stack.Add(Label("Create your new password", 14, CustomerUi.Dark, FontAttributes.Bold));
+        stack.Add(Label("Use at least 8 characters. Mix letters, numbers, and symbols when you can.", 11, CustomerUi.Muted));
         stack.Add(Card(password, Colors.White, 8, new Thickness(12, 2)));
         stack.Add(Card(confirm, Colors.White, 8, new Thickness(12, 2)));
         stack.Add(OrangeButton(_isBusy ? "Updating password..." : "Update password", new Command(async () => await ResetPasswordAsync())));
-        stack.Add(GhostButton("Send a new code", new Command(async () => await SendCodeAsync())));
+        stack.Add(GhostButton("Back to code", new Command(() =>
+        {
+            _step = 1;
+            Render();
+        })));
         return Card(stack, Colors.White, 8, new Thickness(14));
+    }
+
+    private View BuildSuccessStep()
+    {
+        return Card(new VerticalStackLayout
+        {
+            Spacing = 12,
+            Children =
+            {
+                Label("Your password has been changed successfully.", 18, CustomerUi.Dark, FontAttributes.Bold),
+                Label("You can sign in with your new password now.", 12, CustomerUi.Muted),
+                OrangeButton("Back to Login", new Command(async () => await Shell.Current.GoToAsync("..")))
+            }
+        }, Colors.White, 8, new Thickness(14));
     }
 
     private async Task SendCodeAsync()
@@ -188,12 +222,82 @@ public sealed class PasswordResetPage : CustomerPageBase, IQueryAttributable
             }
 
             _email = _email.Trim();
-            _codeSent = true;
+            _step = 1;
             _banner = "If that email exists, a six-digit reset code was sent. It expires in 15 minutes.";
         }
         catch
         {
             _banner = "BikeMate could not reach the API. Start the API, then send the code again.";
+        }
+        finally
+        {
+            _isBusy = false;
+            Render();
+        }
+    }
+
+    private async Task ResendCodeAsync()
+    {
+        if (_isBusy)
+        {
+            return;
+        }
+
+        _isBusy = true;
+        _banner = null;
+        Render();
+        try
+        {
+            using var http = ApiConfig.CreateHttpClient();
+            using var response = await http.PostAsJsonAsync("auth/resend-password-reset-otp", new ResendPasswordResetOtpRequestDto(_email.Trim()));
+            _banner = response.IsSuccessStatusCode
+                ? "A new reset code was sent if that email exists."
+                : await response.Content.ReadAsStringAsync();
+        }
+        catch
+        {
+            _banner = "BikeMate could not reach the API. Check your connection and try again.";
+        }
+        finally
+        {
+            _isBusy = false;
+            Render();
+        }
+    }
+
+    private async Task VerifyCodeAsync()
+    {
+        if (_isBusy)
+        {
+            return;
+        }
+
+        if (_code.Trim().Length != 6)
+        {
+            _banner = "Enter the six-digit code from your email.";
+            Render();
+            return;
+        }
+
+        _isBusy = true;
+        _banner = null;
+        Render();
+        try
+        {
+            using var http = ApiConfig.CreateHttpClient();
+            using var response = await http.PostAsJsonAsync("auth/verify-password-reset-otp", new VerifyPasswordResetOtpRequestDto(_email.Trim(), _code.Trim()));
+            if (!response.IsSuccessStatusCode)
+            {
+                _banner = await response.Content.ReadAsStringAsync();
+                return;
+            }
+
+            _step = 2;
+            _banner = "Code verified. Set a new password for your BikeMate account.";
+        }
+        catch
+        {
+            _banner = "BikeMate could not reach the API. Check your connection and try again.";
         }
         finally
         {
@@ -248,8 +352,8 @@ public sealed class PasswordResetPage : CustomerPageBase, IQueryAttributable
                 return;
             }
 
-            await DisplayAlertAsync("Password updated", "You can sign in with your new password now.", "OK");
-            await Shell.Current.GoToAsync("..");
+            _step = 3;
+            _banner = null;
         }
         catch
         {

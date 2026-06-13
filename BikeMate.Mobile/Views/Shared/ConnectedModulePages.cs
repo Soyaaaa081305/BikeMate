@@ -158,13 +158,13 @@ public abstract class ConnectedModulePage : ContentPage
             Text = _pageTitle,
             TextColor = Dark,
             FontAttributes = FontAttributes.Bold,
-            FontSize = 22
+            FontSize = 18
         });
         text.Add(new Label
         {
             Text = _subtitle,
             TextColor = Muted,
-            FontSize = 12,
+            FontSize = 13,
             LineBreakMode = LineBreakMode.WordWrap
         });
         grid.Add(text, 0, 0);
@@ -189,7 +189,7 @@ public abstract class ConnectedModulePage : ContentPage
             CornerRadius = 8,
             HeightRequest = 40,
             Padding = new Thickness(12, 0),
-            FontSize = 12,
+            FontSize = 13,
             Command = new Command(async () => await AppNavigation.SignOutAsync())
         }, 2, 0);
 
@@ -211,7 +211,7 @@ public abstract class ConnectedModulePage : ContentPage
                 CornerRadius = 8,
                 HeightRequest = 38,
                 Padding = new Thickness(12, 0),
-                FontSize = 12,
+                FontSize = 13,
                 Command = new Command(async () => await Shell.Current.GoToAsync(action.Route))
             });
         }
@@ -226,7 +226,7 @@ public abstract class ConnectedModulePage : ContentPage
         {
             Text = card.Title,
             TextColor = Dark,
-            FontSize = 15,
+            FontSize = 13,
             FontAttributes = FontAttributes.Bold,
             LineBreakMode = LineBreakMode.WordWrap
         });
@@ -234,7 +234,7 @@ public abstract class ConnectedModulePage : ContentPage
         {
             Text = card.Body,
             TextColor = Muted,
-            FontSize = 12,
+            FontSize = 13,
             LineBreakMode = LineBreakMode.WordWrap
         });
         return new Border
@@ -260,7 +260,7 @@ public abstract class ConnectedModulePage : ContentPage
             {
                 Text = text,
                 TextColor = Muted,
-                FontSize = 12,
+                FontSize = 13,
                 LineBreakMode = LineBreakMode.WordWrap
             }
         };

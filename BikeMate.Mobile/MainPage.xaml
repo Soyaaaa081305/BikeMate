@@ -1,4 +1,4 @@
-﻿<?xml version="1.0" encoding="utf-8" ?>
+<?xml version="1.0" encoding="utf-8" ?>
 <ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
              xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
              x:Class="BikeMate.MainPage"
@@ -10,7 +10,7 @@
             <VerticalStackLayout Spacing="16" VerticalOptions="Center" HorizontalOptions="Center">
                 <Image Source="bikemate_logo.png" HeightRequest="130" WidthRequest="130" HorizontalOptions="Center"/>
                 <ActivityIndicator IsRunning="True" Color="#F16E30" HeightRequest="34" WidthRequest="34"/>
-                <Label Text="Opening BikeMate" FontSize="14" TextColor="#6E6E6E" HorizontalTextAlignment="Center"/>
+                <Label Text="Opening BikeMate" FontSize="13" TextColor="#6E6E6E" HorizontalTextAlignment="Center"/>
             </VerticalStackLayout>
         </Grid>
 
@@ -30,8 +30,8 @@
                     <DataTemplate>
                         <VerticalStackLayout VerticalOptions="Center" HorizontalOptions="Center" Spacing="20">
                             <Image Source="{Binding ImageSource}" HeightRequest="200" WidthRequest="200" HorizontalOptions="Center"/>
-                            <Label Text="{Binding Title}" FontSize="22" FontAttributes="Bold" HorizontalTextAlignment="Center" TextColor="Black"/>
-                            <Label Text="{Binding Description}" FontSize="14" HorizontalTextAlignment="Center" TextColor="#4A4A4A" Margin="20,0"/>
+                            <Label Text="{Binding Title}" FontSize="18" FontAttributes="Bold" HorizontalTextAlignment="Center" TextColor="Black"/>
+                            <Label Text="{Binding Description}" FontSize="13" HorizontalTextAlignment="Center" TextColor="#4A4A4A" Margin="20,0"/>
                         </VerticalStackLayout>
                     </DataTemplate>
                 </CarouselView.ItemTemplate>
@@ -52,10 +52,10 @@
         <!-- Paywall Section -->
         <ScrollView IsVisible="{Binding IsPaywallVisible}" Padding="20">
             <VerticalStackLayout Spacing="15" VerticalOptions="Center">
-                <Button Text="✕" Command="{Binding ClosePaywallCommand}" HorizontalOptions="Start" BackgroundColor="Transparent" TextColor="Gray" FontSize="18"/>
+                <Button Text="X" Command="{Binding ClosePaywallCommand}" HorizontalOptions="Start" BackgroundColor="Transparent" TextColor="Gray" FontSize="18"/>
 
-                <Label Text="Subscribe Now!" FontSize="24" FontAttributes="Bold" TextColor="#F16E30" HorizontalOptions="Center"/>
-                <Label Text="Unlock all the power of this mobile tool and enjoy digital experience like never before!" FontSize="12" HorizontalTextAlignment="Center" TextColor="Gray"/>
+                <Label Text="Subscribe Now!" FontSize="18" FontAttributes="Bold" TextColor="#F16E30" HorizontalOptions="Center"/>
+                <Label Text="Unlock all the power of this mobile tool and enjoy digital experience like never before!" FontSize="13" HorizontalTextAlignment="Center" TextColor="Gray"/>
 
                 <Image Source="bikemate_logo.png" HeightRequest="120" HorizontalOptions="Center" Margin="0,10"/>
 
@@ -66,9 +66,9 @@
                     <Grid ColumnDefinitions="*, Auto">
                         <VerticalStackLayout Grid.Column="0">
                             <Label Text="Annual" FontAttributes="Bold" TextColor="Black"/>
-                            <Label Text="First 30 days free - Then ₱1,000/Year" FontSize="12" TextColor="Gray"/>
+                            <Label Text="First 30 days free - Then PHP 1,000/Year" FontSize="13" TextColor="Gray"/>
                         </VerticalStackLayout>
-                        <Label Grid.Column="1" Text="Best Value" BackgroundColor="#2ECC71" TextColor="White" Padding="5,2" FontSize="10" VerticalOptions="Center"/>
+                        <Label Grid.Column="1" Text="Best Value" BackgroundColor="#2ECC71" TextColor="White" Padding="5,2" FontSize="11" VerticalOptions="Center"/>
                     </Grid>
                 </Border>
 
@@ -78,12 +78,12 @@
                     </Border.StrokeShape>
                     <VerticalStackLayout>
                         <Label Text="Monthly" FontAttributes="Bold" TextColor="Black"/>
-                        <Label Text="First 7 days free - Then ₱100/Month" FontSize="12" TextColor="Gray"/>
+                        <Label Text="First 7 days free - Then PHP 100/Month" FontSize="13" TextColor="Gray"/>
                     </VerticalStackLayout>
                 </Border>
 
                 <Button Text="Start 30-day free trial" Command="{Binding StartTrialCommand}" BackgroundColor="#F16E30" TextColor="White" CornerRadius="15" HeightRequest="50" FontAttributes="Bold" Margin="0,10,0,0"/>
-                <Label Text="By placing this order, you agree to the Terms of Service and Privacy Policy..." FontSize="9" HorizontalTextAlignment="Center" TextColor="Gray"/>
+                <Label Text="By placing this order, you agree to the Terms of Service and Privacy Policy..." FontSize="11" HorizontalTextAlignment="Center" TextColor="Gray"/>
             </VerticalStackLayout>
         </ScrollView>
 
@@ -97,7 +97,7 @@
 
                 <Button Text="Sign In" Command="{Binding SignInCommand}" BackgroundColor="#F16E30" TextColor="White" CornerRadius="15" HeightRequest="50" FontAttributes="Bold"/>
 
-                <Label Text="{Binding LoginStatus}" FontSize="12" TextColor="#6E6E6E" HorizontalTextAlignment="Center"/>
+                <Label Text="{Binding LoginStatus}" FontSize="13" TextColor="#6E6E6E" HorizontalTextAlignment="Center"/>
 
                 <Label Text="Use seeded test accounts" FontSize="13" FontAttributes="Bold" TextColor="#1F2933" HorizontalTextAlignment="Center"/>
 

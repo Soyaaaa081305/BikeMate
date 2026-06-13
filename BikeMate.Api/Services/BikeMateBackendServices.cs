@@ -1,6 +1,7 @@
 using System.IdentityModel.Tokens.Jwt;
 using System.Buffers.Binary;
 using System.IO.Compression;
+using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Security.Claims;
@@ -12,6 +13,8 @@ using BikeMate.Core.DTOs;
 using BikeMate.Core.Entities;
 using BikeMate.Infrastructure.Data;
 using Google.Apis.Auth;
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 
@@ -254,6 +257,8 @@ public interface IAuthService
     Task VerifyOtpAsync(VerifyOtpRequestDto dto, CancellationToken cancellationToken);
     Task ResendOtpAsync(ResendOtpRequestDto dto, CancellationToken cancellationToken);
     Task ForgotPasswordAsync(ForgotPasswordRequestDto dto, CancellationToken cancellationToken);
+    Task VerifyPasswordResetOtpAsync(VerifyPasswordResetOtpRequestDto dto, CancellationToken cancellationToken);
+    Task ResendPasswordResetOtpAsync(ResendPasswordResetOtpRequestDto dto, CancellationToken cancellationToken);
     Task ResetPasswordAsync(ResetPasswordRequestDto dto, CancellationToken cancellationToken);
 }
 
@@ -438,6 +443,34 @@ public sealed class AuthService(
         await emailService.SendPasswordResetAsync(user, token, cancellationToken);
     }
 
+    public async Task VerifyPasswordResetOtpAsync(VerifyPasswordResetOtpRequestDto dto, CancellationToken cancellationToken)
+    {
+        var normalizedEmail = dto.Email.Trim().ToLowerInvariant();
+        var code = dto.OtpCode.Trim();
+        if (code.Length is < 4 or > 8)
+        {
+            throw new InvalidOperationException("Enter the reset code from your email.");
+        }
+
+        var user = await db.Users.SingleOrDefaultAsync(x => x.Email == normalizedEmail, cancellationToken)
+            ?? throw new InvalidOperationException("Reset code was not found or has expired.");
+        var token = await db.PasswordResetTokens
+            .Where(x => x.UserId == user.UserId && x.ConsumedAt == null)
+            .OrderByDescending(x => x.CreatedAt)
+            .FirstOrDefaultAsync(cancellationToken)
+            ?? throw new InvalidOperationException("Reset code was not found or has expired.");
+
+        if (token.ExpiresAt < DateTime.UtcNow || !passwordService.VerifyPassword(code, token.TokenHash))
+        {
+            throw new InvalidOperationException("Reset code was not found or has expired.");
+        }
+    }
+
+    public Task ResendPasswordResetOtpAsync(ResendPasswordResetOtpRequestDto dto, CancellationToken cancellationToken)
+    {
+        return ForgotPasswordAsync(new ForgotPasswordRequestDto(dto.Email), cancellationToken);
+    }
+
     public async Task ResetPasswordAsync(ResetPasswordRequestDto dto, CancellationToken cancellationToken)
     {
         if (!string.Equals(dto.NewPassword, dto.ConfirmPassword, StringComparison.Ordinal))
@@ -528,14 +561,130 @@ public sealed class AuthService(
 public interface IFileStorageService
 {
     Task<string> SavePlaceholderAsync(string folder, string fileName, CancellationToken cancellationToken);
+    Task<UploadedFileDto> SaveFileAsync(IFormFile file, string folder, CancellationToken cancellationToken);
 }
 
-public sealed class FileStorageService(IConfiguration configuration) : IFileStorageService
+public sealed class FileStorageService(
+    IConfiguration configuration,
+    IWebHostEnvironment environment,
+    IHttpContextAccessor httpContextAccessor) : IFileStorageService
 {
+    private static readonly HashSet<string> AllowedContentTypes = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "image/jpeg",
+        "image/png",
+        "image/webp",
+        "application/pdf",
+        "text/plain",
+        "application/msword",
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        "video/mp4",
+        "video/webm",
+        "video/quicktime",
+        "video/3gpp"
+    };
+
+    private static readonly HashSet<string> AllowedExtensions = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ".jpg",
+        ".jpeg",
+        ".png",
+        ".webp",
+        ".pdf",
+        ".txt",
+        ".doc",
+        ".docx",
+        ".mp4",
+        ".webm",
+        ".mov",
+        ".3gp"
+    };
+
     public Task<string> SavePlaceholderAsync(string folder, string fileName, CancellationToken cancellationToken)
     {
-        var baseUrl = configuration["Storage:BaseUrl"] ?? "https://localhost:5001/uploads";
-        return Task.FromResult($"{baseUrl.TrimEnd('/')}/{folder}/{fileName}");
+        return Task.FromResult($"{UploadBaseUrl().TrimEnd('/')}/{SanitizePathSegment(folder)}/{Path.GetFileName(fileName)}");
+    }
+
+    public async Task<UploadedFileDto> SaveFileAsync(IFormFile file, string folder, CancellationToken cancellationToken)
+    {
+        if (file.Length <= 0)
+        {
+            throw new InvalidOperationException("Select a file before uploading.");
+        }
+
+        var maxBytes = configuration.GetValue<long?>("Storage:MaxFileBytes") ?? 50 * 1024 * 1024;
+        if (file.Length > maxBytes)
+        {
+            throw new InvalidOperationException($"The selected file is too large. Maximum size is {maxBytes / 1024 / 1024} MB.");
+        }
+
+        var extension = Path.GetExtension(file.FileName);
+        var contentType = string.IsNullOrWhiteSpace(file.ContentType)
+            ? GuessContentType(extension)
+            : file.ContentType;
+
+        if (!AllowedContentTypes.Contains(contentType) || !AllowedExtensions.Contains(extension))
+        {
+            throw new InvalidOperationException("BikeMate accepts JPG, PNG, WEBP, PDF, TXT, DOC, DOCX, MP4, WEBM, MOV, and 3GP files.");
+        }
+
+        var safeFolder = SanitizePathSegment(folder);
+        var dayFolder = DateTime.UtcNow.ToString("yyyyMMdd");
+        var storedFileName = $"{Guid.NewGuid():N}{extension.ToLowerInvariant()}";
+        var webRoot = string.IsNullOrWhiteSpace(environment.WebRootPath)
+            ? Path.Combine(environment.ContentRootPath, "wwwroot")
+            : environment.WebRootPath;
+        var targetDirectory = Path.Combine(webRoot, "uploads", safeFolder, dayFolder);
+        Directory.CreateDirectory(targetDirectory);
+
+        var targetPath = Path.Combine(targetDirectory, storedFileName);
+        await using (var stream = File.Create(targetPath))
+        {
+            await file.CopyToAsync(stream, cancellationToken);
+        }
+
+        var publicUrl = $"{UploadBaseUrl().TrimEnd('/')}/{safeFolder}/{dayFolder}/{storedFileName}";
+        return new UploadedFileDto(publicUrl, Path.GetFileName(file.FileName), contentType, file.Length);
+    }
+
+    private string UploadBaseUrl()
+    {
+        var configured = configuration["Storage:BaseUrl"];
+        if (!string.IsNullOrWhiteSpace(configured))
+        {
+            return configured;
+        }
+
+        var request = httpContextAccessor.HttpContext?.Request;
+        return request is null
+            ? "https://localhost:5001/uploads"
+            : $"{request.Scheme}://{request.Host}/uploads";
+    }
+
+    private static string SanitizePathSegment(string? value)
+    {
+        var source = string.IsNullOrWhiteSpace(value) ? "general" : value.Trim().ToLowerInvariant();
+        var safe = new string(source.Select(ch => char.IsLetterOrDigit(ch) || ch is '-' or '_' ? ch : '-').ToArray());
+        return string.IsNullOrWhiteSpace(safe) ? "general" : safe;
+    }
+
+    private static string GuessContentType(string extension)
+    {
+        return extension.ToLowerInvariant() switch
+        {
+            ".jpg" or ".jpeg" => "image/jpeg",
+            ".png" => "image/png",
+            ".webp" => "image/webp",
+            ".pdf" => "application/pdf",
+            ".txt" => "text/plain",
+            ".doc" => "application/msword",
+            ".docx" => "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            ".mp4" => "video/mp4",
+            ".webm" => "video/webm",
+            ".mov" => "video/quicktime",
+            ".3gp" => "video/3gpp",
+            _ => "application/octet-stream"
+        };
     }
 }
 
@@ -562,15 +711,23 @@ public sealed class ServiceRequestService(BikeMateDbContext db) : IServiceReques
     {
         var client = await db.Clients.SingleAsync(x => x.UserId == userId, cancellationToken);
         var pendingStatusId = await db.RequestStatuses.Where(x => x.StatusName == "pending").Select(x => x.StatusId).SingleAsync(cancellationToken);
-        var estimatedTotal = dto.ShopServiceId is null
-            ? 0m
-            : await db.ShopServices.Where(x => x.ShopServiceId == dto.ShopServiceId).Select(x => x.BasePrice).FirstOrDefaultAsync(cancellationToken);
+        var selectedService = dto.ShopServiceId is null
+            ? null
+            : await db.ShopServices.SingleOrDefaultAsync(x => x.ShopServiceId == dto.ShopServiceId && x.IsActive, cancellationToken)
+                ?? throw new InvalidOperationException("Select an available service before booking.");
+        if (selectedService is not null && dto.ShopId is not null && selectedService.ShopId != dto.ShopId)
+        {
+            throw new InvalidOperationException("Selected service does not belong to the selected shop.");
+        }
+
+        var selectedShopId = dto.ShopId ?? selectedService?.ShopId;
+        var estimatedTotal = selectedService?.BasePrice ?? 0m;
 
         var request = new ServiceRequest
         {
             ClientId = client.ClientId,
-            ShopId = dto.ShopId,
-            ShopServiceId = dto.ShopServiceId,
+            ShopId = selectedShopId,
+            ShopServiceId = selectedService?.ShopServiceId,
             MotorcycleId = dto.MotorcycleId,
             CurrentStatusId = pendingStatusId,
             IssueDescription = dto.IssueDescription,
@@ -899,7 +1056,10 @@ public sealed class AgoraTokenService(IConfiguration configuration, ILogger<Agor
 public interface IPayMongoService
 {
     Task<(string SessionId, string CheckoutUrl, string ReferenceNumber)> CreateCheckoutAsync(int requestId, decimal amount, CancellationToken cancellationToken);
+    Task<PayMongoCheckoutStatus> GetCheckoutStatusAsync(string checkoutSessionId, CancellationToken cancellationToken);
 }
+
+public sealed record PayMongoCheckoutStatus(bool IsPaid, string? Status, string? ProviderPaymentId, string? PayloadJson);
 
 public sealed class PayMongoService(
     IConfiguration configuration,
@@ -976,6 +1136,139 @@ public sealed class PayMongoService(
 
         return (sessionId, checkoutUrl, responseReference);
     }
+
+    public async Task<PayMongoCheckoutStatus> GetCheckoutStatusAsync(string checkoutSessionId, CancellationToken cancellationToken)
+    {
+        var secretKey = configuration["PayMongo:SecretKey"];
+        if (string.IsNullOrWhiteSpace(secretKey) ||
+            !secretKey.StartsWith("sk_", StringComparison.OrdinalIgnoreCase) ||
+            secretKey.StartsWith("YOUR_", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException("PayMongo checkout is not configured on the API. Set PayMongo:SecretKey on the server and try again.");
+        }
+
+        var escapedSessionId = Uri.EscapeDataString(checkoutSessionId);
+        var endpoints = new[]
+        {
+            $"https://api.paymongo.com/v2/checkout_sessions/{escapedSessionId}",
+            $"https://api.paymongo.com/v1/checkout_sessions/{escapedSessionId}"
+        };
+        var client = httpClientFactory.CreateClient();
+        string? lastNotFoundPayload = null;
+
+        foreach (var endpoint in endpoints)
+        {
+            using var request = CreatePayMongoRequest(HttpMethod.Get, endpoint, secretKey);
+            using var response = await client.SendAsync(request, cancellationToken);
+            var payload = await response.Content.ReadAsStringAsync(cancellationToken);
+            if (response.StatusCode == HttpStatusCode.NotFound)
+            {
+                lastNotFoundPayload = payload;
+                continue;
+            }
+
+            if (!response.IsSuccessStatusCode)
+            {
+                logger.LogWarning("PayMongo checkout status failed for session {SessionId}. Status: {Status}. Body: {Body}", checkoutSessionId, response.StatusCode, payload);
+                throw new InvalidOperationException("PayMongo checkout status could not be refreshed.");
+            }
+
+            return ParseCheckoutStatus(payload);
+        }
+
+        logger.LogWarning("PayMongo checkout session {SessionId} was not found from either PayMongo status endpoint. Body: {Body}", checkoutSessionId, lastNotFoundPayload);
+        return new PayMongoCheckoutStatus(false, "not_found", null, string.IsNullOrWhiteSpace(lastNotFoundPayload) ? "{}" : lastNotFoundPayload);
+    }
+
+    private static HttpRequestMessage CreatePayMongoRequest(HttpMethod method, string url, string secretKey)
+    {
+        var request = new HttpRequestMessage(method, url);
+        request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+        request.Headers.Authorization = new AuthenticationHeaderValue(
+            "Basic",
+            Convert.ToBase64String(Encoding.UTF8.GetBytes($"{secretKey}:")));
+        return request;
+    }
+
+    private static PayMongoCheckoutStatus ParseCheckoutStatus(string payload)
+    {
+        using var document = JsonDocument.Parse(payload);
+        var root = document.RootElement;
+        var status = FindString(root, "status", "payment_status");
+        var paid = string.Equals(status, "paid", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(status, "succeeded", StringComparison.OrdinalIgnoreCase) ||
+            HasPaidPayment(root);
+        var paymentId = FindString(root, "payment_id", "payment_intent_id");
+        return new PayMongoCheckoutStatus(paid, status, paymentId, payload);
+    }
+
+    private static bool HasPaidPayment(JsonElement element)
+    {
+        if (element.ValueKind == JsonValueKind.Object)
+        {
+            foreach (var property in element.EnumerateObject())
+            {
+                if (string.Equals(property.Name, "status", StringComparison.OrdinalIgnoreCase) &&
+                    property.Value.ValueKind is JsonValueKind.String or JsonValueKind.Number &&
+                    (string.Equals(property.Value.ToString(), "paid", StringComparison.OrdinalIgnoreCase) ||
+                     string.Equals(property.Value.ToString(), "succeeded", StringComparison.OrdinalIgnoreCase)))
+                {
+                    return true;
+                }
+
+                if (HasPaidPayment(property.Value))
+                {
+                    return true;
+                }
+            }
+        }
+        else if (element.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var item in element.EnumerateArray())
+            {
+                if (HasPaidPayment(item))
+                {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
+    private static string? FindString(JsonElement element, params string[] names)
+    {
+        if (element.ValueKind == JsonValueKind.Object)
+        {
+            foreach (var property in element.EnumerateObject())
+            {
+                if (names.Any(name => string.Equals(name, property.Name, StringComparison.OrdinalIgnoreCase)) &&
+                    property.Value.ValueKind is JsonValueKind.String or JsonValueKind.Number)
+                {
+                    return property.Value.ToString();
+                }
+
+                var nested = FindString(property.Value, names);
+                if (!string.IsNullOrWhiteSpace(nested))
+                {
+                    return nested;
+                }
+            }
+        }
+        else if (element.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var item in element.EnumerateArray())
+            {
+                var nested = FindString(item, names);
+                if (!string.IsNullOrWhiteSpace(nested))
+                {
+                    return nested;
+                }
+            }
+        }
+
+        return null;
+    }
 }
 
 public interface IPaymentService
@@ -987,17 +1280,46 @@ public sealed class PaymentService(BikeMateDbContext db, IPayMongoService payMon
 {
     public async Task<PaymentDto> CreateCheckoutAsync(int userId, CreateCheckoutSessionDto dto, CancellationToken cancellationToken)
     {
-        var request = await db.ServiceRequests.Include(x => x.Client).SingleAsync(x => x.RequestId == dto.RequestId, cancellationToken);
+        var request = await db.ServiceRequests
+            .Include(x => x.Client)
+            .Include(x => x.CurrentStatus)
+            .Include(x => x.ShopService)
+            .Include(x => x.Payments).ThenInclude(x => x.PaymentStatus)
+            .SingleAsync(x => x.RequestId == dto.RequestId, cancellationToken);
         if (request.Client!.UserId != userId)
         {
             throw new UnauthorizedAccessException("You can only pay for your own request.");
         }
 
+        if (request.ShopId is null || request.ShopServiceId is null || request.ShopService is null)
+        {
+            throw new InvalidOperationException("Select a repair shop and service before secure payment.");
+        }
+
+        if (request.ShopService.ShopId != request.ShopId || !request.ShopService.IsActive)
+        {
+            throw new InvalidOperationException("The selected shop service is no longer available. Choose another service before payment.");
+        }
+
+        var amount = request.FinalTotal > 0 ? request.FinalTotal : request.ShopService.BasePrice;
+        request.EstimatedTotal = request.ShopService.BasePrice;
         var pendingStatusId = await db.PaymentStatuses.Where(x => x.StatusName == "pending").Select(x => x.PaymentStatusId).SingleAsync(cancellationToken);
-        var amount = dto.Amount ?? request.FinalTotal;
+        var existingPending = request.Payments
+            .Where(x => x.PaymentStatus?.StatusName == PaymentStatuses.Pending &&
+                        !string.IsNullOrWhiteSpace(x.CheckoutUrl) &&
+                        x.Amount == amount)
+            .OrderByDescending(x => x.CreatedAt)
+            .FirstOrDefault();
+        if (existingPending is not null)
+        {
+            await MoveRequestStatusAsync(request, RequestStatuses.PaymentPending, "Existing PayMongo checkout is still pending.", cancellationToken);
+            await db.SaveChangesAsync(cancellationToken);
+            return ToPaymentDto(existingPending, PaymentStatuses.Pending);
+        }
+
         if (amount <= 0)
         {
-            amount = request.EstimatedTotal;
+            throw new InvalidOperationException("Payment amount must be greater than zero.");
         }
 
         var checkout = await payMongoService.CreateCheckoutAsync(request.RequestId, amount, cancellationToken);
@@ -1015,8 +1337,61 @@ public sealed class PaymentService(BikeMateDbContext db, IPayMongoService payMon
             CreatedAt = DateTime.UtcNow
         };
         db.Payments.Add(payment);
+        await MoveRequestStatusAsync(request, RequestStatuses.PaymentPending, "PayMongo checkout created and waiting for payment confirmation.", cancellationToken);
         await db.SaveChangesAsync(cancellationToken);
-        return new PaymentDto(payment.PaymentId, payment.RequestId, "pending", payment.Amount, payment.Currency, payment.ProviderName, payment.CheckoutUrl, payment.ProviderReferenceNumber, payment.CreatedAt, payment.PaidAt);
+        return ToPaymentDto(payment, PaymentStatuses.Pending);
+    }
+
+    private async Task MoveRequestStatusAsync(ServiceRequest request, string statusName, string notes, CancellationToken cancellationToken)
+    {
+        if (request.CurrentStatus?.StatusName == statusName)
+        {
+            return;
+        }
+
+        var oldStatusId = request.CurrentStatusId;
+        var newStatusId = await GetOrCreateRequestStatusIdAsync(statusName, cancellationToken);
+        request.CurrentStatusId = newStatusId;
+        db.RequestStatusHistory.Add(new RequestStatusHistory
+        {
+            RequestId = request.RequestId,
+            OldStatusId = oldStatusId,
+            NewStatusId = newStatusId,
+            Notes = notes,
+            CreatedAt = DateTime.UtcNow
+        });
+    }
+
+    private async Task<int> GetOrCreateRequestStatusIdAsync(string statusName, CancellationToken cancellationToken)
+    {
+        var existingStatusId = await db.RequestStatuses
+            .Where(x => x.StatusName == statusName)
+            .Select(x => (int?)x.StatusId)
+            .SingleOrDefaultAsync(cancellationToken);
+        if (existingStatusId is not null)
+        {
+            return existingStatusId.Value;
+        }
+
+        var status = new RequestStatus { StatusName = statusName };
+        db.RequestStatuses.Add(status);
+        await db.SaveChangesAsync(cancellationToken);
+        return status.StatusId;
+    }
+
+    private static PaymentDto ToPaymentDto(Payment payment, string statusName)
+    {
+        return new PaymentDto(
+            payment.PaymentId,
+            payment.RequestId,
+            statusName,
+            payment.Amount,
+            payment.Currency,
+            payment.ProviderName,
+            payment.CheckoutUrl,
+            payment.ProviderReferenceNumber,
+            payment.CreatedAt,
+            payment.PaidAt);
     }
 }
 

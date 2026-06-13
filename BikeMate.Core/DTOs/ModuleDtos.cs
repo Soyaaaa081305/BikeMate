@@ -4,6 +4,8 @@ public sealed record GoogleLoginRequestDto(string IdToken, string? Role);
 public sealed record VerifyOtpRequestDto(string Email, string OtpCode, string Purpose);
 public sealed record ResendOtpRequestDto(string Email, string Purpose);
 public sealed record ForgotPasswordRequestDto(string Email);
+public sealed record VerifyPasswordResetOtpRequestDto(string Email, string OtpCode);
+public sealed record ResendPasswordResetOtpRequestDto(string Email);
 public sealed record ResetPasswordRequestDto(string Email, string Token, string NewPassword, string ConfirmPassword);
 
 public sealed record CustomerAddressDto(
@@ -149,6 +151,7 @@ public sealed record ServiceRequestDto(
 public sealed record UpdateRequestStatusDto(string Status, string? Notes);
 public sealed record AssignMechanicDto(int MechanicId);
 public sealed record UploadMediaDto(string MediaUrl, string MediaType, string? Caption);
+public sealed record UploadedFileDto(string Url, string FileName, string ContentType, long SizeBytes);
 public sealed record SelectShopDto(int ShopId, int? ShopServiceId);
 
 public sealed record MechanicProfileDto(
@@ -170,6 +173,9 @@ public sealed record UpdateMechanicProfileDto(
 
 public sealed record LocationUpdateDto(int? RequestId, int? MechanicId, decimal Latitude, decimal Longitude, decimal? AccuracyMeters);
 public sealed record LiveLocationDto(int LiveLocationId, int? RequestId, int? MechanicId, decimal Latitude, decimal Longitude, DateTime CreatedAt);
+public sealed record MapPointDto(decimal Latitude, decimal Longitude, string Address, string? PlaceId);
+public sealed record MapPlaceSuggestionDto(string PlaceId, string Description);
+public sealed record MapDirectionsDto(string DistanceText, string DurationText, int? DistanceMeters, int? DurationSeconds, string? EncodedPolyline);
 
 public sealed record CreateEmergencyRequestDto(
     decimal Latitude,

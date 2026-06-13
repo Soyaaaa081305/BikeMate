@@ -82,7 +82,7 @@ public abstract class MechanicPageBase : ContentPage
             CornerRadius = 8,
             HeightRequest = 40,
             Padding = new Thickness(12, 0),
-            FontSize = 12,
+            FontSize = 13,
             Command = new Command(async () => await AppNavigation.SignOutAsync())
         }, 2, 0);
 
@@ -94,7 +94,7 @@ public abstract class MechanicPageBase : ContentPage
         return new Label
         {
             Text = text,
-            FontSize = size,
+            FontSize = AppTypography.SizeFor(size),
             TextColor = color,
             FontAttributes = attributes,
             FontFamily = FontFor(size, attributes),
@@ -104,12 +104,7 @@ public abstract class MechanicPageBase : ContentPage
 
     private static string FontFor(double size, FontAttributes attributes = FontAttributes.None)
     {
-        if (size <= 11)
-        {
-            return (attributes & FontAttributes.Bold) != 0 ? "PTSansCaptionBold" : "PTSansCaption";
-        }
-
-        return size >= 16 || (attributes & FontAttributes.Bold) != 0 ? "Inter" : "PublicSans";
+        return AppTypography.FontFor(size, attributes);
     }
 
     protected static Border Card(View content, Color? background = null, Thickness? padding = null)
@@ -233,11 +228,15 @@ public abstract class MechanicPageBase : ContentPage
 
     protected static HtmlWebViewSource MapSource(decimal latitude, decimal longitude)
     {
-        var frameUrl = $"https://maps.google.com/maps?q={latitude.ToString(CultureInfo.InvariantCulture)},{longitude.ToString(CultureInfo.InvariantCulture)}&z=15&output=embed";
+        var query = $"{latitude.ToString(CultureInfo.InvariantCulture)},{longitude.ToString(CultureInfo.InvariantCulture)}";
+        var key = GoogleMapsEmbedKey();
+        var frameUrl = string.IsNullOrWhiteSpace(key)
+            ? $"https://maps.google.com/maps?q={Uri.EscapeDataString(query)}&z=15&output=embed"
+            : $"https://www.google.com/maps/embed/v1/place?key={Uri.EscapeDataString(key)}&q={Uri.EscapeDataString(query)}&zoom=15";
         var encodedUrl = WebUtility.HtmlEncode(frameUrl);
         return new HtmlWebViewSource
         {
-            BaseUrl = "https://maps.google.com",
+            BaseUrl = "https://www.google.com",
             Html = $$"""
 <!doctype html>
 <html>
@@ -253,6 +252,15 @@ public abstract class MechanicPageBase : ContentPage
 </html>
 """
         };
+    }
+
+    private static string GoogleMapsEmbedKey()
+    {
+#if ANDROID
+        return Android.App.Application.Context.GetString(Resource.String.google_maps_embed_key) ?? string.Empty;
+#else
+        return string.Empty;
+#endif
     }
 
     protected static async Task<(decimal Latitude, decimal Longitude, decimal? Accuracy, bool Fallback)> ResolveAreaAsync()

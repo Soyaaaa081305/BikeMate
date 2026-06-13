@@ -18,6 +18,7 @@ namespace BikeMate.Api.Controllers;
 public sealed class PaymentsController(
     BikeMateDbContext db,
     IPaymentService paymentService,
+    IPayMongoService payMongoService,
     IConfiguration configuration) : ControllerBase
 {
     [HttpPost("create-checkout-session")]
@@ -68,6 +69,7 @@ public sealed class PaymentsController(
         {
             payment = await db.Payments
                 .Include(x => x.PaymentStatus)
+                .Include(x => x.Request).ThenInclude(x => x!.CurrentStatus)
                 .FirstOrDefaultAsync(x =>
                     x.ProviderReferenceNumber == referenceNumber ||
                     x.ProviderCheckoutSessionId == providerCheckoutId,
@@ -76,13 +78,7 @@ public sealed class PaymentsController(
 
         if (paid && payment is not null)
         {
-            payment.PaymentStatusId = await db.PaymentStatuses
-                .Where(x => x.StatusName == "paid")
-                .Select(x => x.PaymentStatusId)
-                .SingleAsync(cancellationToken);
-            payment.PaidAt ??= DateTime.UtcNow;
-            payment.UpdatedAt = DateTime.UtcNow;
-            payment.ProviderPaymentId ??= FindString(root, "payment_id");
+            await MarkPaymentPaidAsync(payment, FindString(root, "payment_id"), "PayMongo webhook confirmed payment.", cancellationToken);
         }
 
         db.PaymentEvents.Add(new PaymentEvent
@@ -117,6 +113,65 @@ public sealed class PaymentsController(
             .SingleAsync(cancellationToken));
     }
 
+    [HttpGet("{paymentId:int}/status")]
+    [Authorize]
+    public async Task<ActionResult<PaymentDto>> GetStatus(int paymentId, CancellationToken cancellationToken)
+    {
+        return await GetById(paymentId, cancellationToken);
+    }
+
+    [HttpPost("{paymentId:int}/refresh")]
+    [Authorize]
+    public async Task<ActionResult<PaymentDto>> RefreshPayment(int paymentId, CancellationToken cancellationToken)
+    {
+        var payment = await db.Payments
+            .Include(x => x.Client)
+            .Include(x => x.PaymentStatus)
+            .Include(x => x.Request).ThenInclude(x => x!.CurrentStatus)
+            .SingleAsync(x => x.PaymentId == paymentId, cancellationToken);
+
+        if (payment.Client?.UserId != User.GetUserId() && !User.IsInRole(AppRoles.SystemAdmin))
+        {
+            return Forbid();
+        }
+
+        if (string.IsNullOrWhiteSpace(payment.ProviderCheckoutSessionId))
+        {
+            return Ok(ToDto(payment));
+        }
+
+        var checkoutStatus = await payMongoService.GetCheckoutStatusAsync(payment.ProviderCheckoutSessionId, cancellationToken);
+        if (checkoutStatus.IsPaid)
+        {
+            await MarkPaymentPaidAsync(payment, checkoutStatus.ProviderPaymentId, "PayMongo checkout refresh confirmed payment.", cancellationToken);
+        }
+
+        db.PaymentEvents.Add(new PaymentEvent
+        {
+            PaymentId = payment.PaymentId,
+            ProviderEventId = $"manual-refresh-{DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()}",
+            EventType = checkoutStatus.IsPaid ? "paymongo.checkout.paid.refresh" : $"paymongo.checkout.{checkoutStatus.Status ?? "unknown"}.refresh",
+            PayloadJson = checkoutStatus.PayloadJson ?? "{}",
+            ReceivedAt = DateTime.UtcNow
+        });
+
+        await db.SaveChangesAsync(cancellationToken);
+        await db.Entry(payment).Reference(x => x.PaymentStatus).LoadAsync(cancellationToken);
+        return Ok(ToDto(payment));
+    }
+
+    [HttpGet("request/{requestId:int}/latest")]
+    [Authorize]
+    public async Task<ActionResult<PaymentDto>> LatestForRequest(int requestId, CancellationToken cancellationToken)
+    {
+        var payment = await QueryPayments()
+            .Where(x => x.RequestId == requestId)
+            .OrderByDescending(x => x.CreatedAt)
+            .Select(x => ToDto(x))
+            .FirstOrDefaultAsync(cancellationToken);
+        return payment is null ? NotFound() : Ok(payment);
+    }
+
     [HttpGet("history")]
     [Authorize(Roles = AppRoles.Customer)]
     public async Task<ActionResult<IReadOnlyCollection<PaymentDto>>> History(CancellationToken cancellationToken)
@@ -137,6 +192,65 @@ public sealed class PaymentsController(
     private static PaymentDto ToDto(Payment x)
     {
         return new PaymentDto(x.PaymentId, x.RequestId, x.PaymentStatus!.StatusName, x.Amount, x.Currency, x.ProviderName, x.CheckoutUrl, x.ProviderReferenceNumber, x.CreatedAt, x.PaidAt);
+    }
+
+    private async Task MarkPaymentPaidAsync(Payment payment, string? providerPaymentId, string requestNote, CancellationToken cancellationToken)
+    {
+        var wasAlreadyPaid = string.Equals(payment.PaymentStatus?.StatusName, PaymentStatuses.Paid, StringComparison.OrdinalIgnoreCase);
+        payment.PaymentStatusId = await db.PaymentStatuses
+            .Where(x => x.StatusName == PaymentStatuses.Paid)
+            .Select(x => x.PaymentStatusId)
+            .SingleAsync(cancellationToken);
+        payment.PaidAt ??= DateTime.UtcNow;
+        payment.UpdatedAt = DateTime.UtcNow;
+        payment.ProviderPaymentId ??= providerPaymentId;
+
+        if (!wasAlreadyPaid && payment.Request is not null)
+        {
+            await MarkRequestPaidAsync(payment.Request, payment.Amount, requestNote, cancellationToken);
+        }
+    }
+
+    private async Task MarkRequestPaidAsync(ServiceRequest request, decimal paidAmount, string note, CancellationToken cancellationToken)
+    {
+        if (string.Equals(request.CurrentStatus?.StatusName, RequestStatuses.Paid, StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        var oldStatusId = request.CurrentStatusId;
+        var paidStatusId = await GetOrCreateRequestStatusIdAsync(RequestStatuses.Paid, cancellationToken);
+        request.CurrentStatusId = paidStatusId;
+        if (request.FinalTotal <= 0)
+        {
+            request.FinalTotal = paidAmount;
+        }
+
+        db.RequestStatusHistory.Add(new RequestStatusHistory
+        {
+            RequestId = request.RequestId,
+            OldStatusId = oldStatusId,
+            NewStatusId = paidStatusId,
+            Notes = note,
+            CreatedAt = DateTime.UtcNow
+        });
+    }
+
+    private async Task<int> GetOrCreateRequestStatusIdAsync(string statusName, CancellationToken cancellationToken)
+    {
+        var existingStatusId = await db.RequestStatuses
+            .Where(x => x.StatusName == statusName)
+            .Select(x => (int?)x.StatusId)
+            .SingleOrDefaultAsync(cancellationToken);
+        if (existingStatusId is not null)
+        {
+            return existingStatusId.Value;
+        }
+
+        var status = new RequestStatus { StatusName = statusName };
+        db.RequestStatuses.Add(status);
+        await db.SaveChangesAsync(cancellationToken);
+        return status.StatusId;
     }
 
     private static bool IsValidPayMongoSignature(string payloadJson, string secret, string? signatureHeader)

@@ -82,7 +82,7 @@ public static class PaymentReturnService
     public static string FormatBanner(PaymentReturnInfo info)
     {
         return string.Equals(info.Status, "success", StringComparison.OrdinalIgnoreCase)
-            ? "Returned from PayMongo. Refreshing payment status from BikeMate now."
+            ? "Returned from PayMongo. BikeMate is waiting for PayMongo confirmation before marking this paid."
             : "PayMongo checkout was cancelled. You can continue payment anytime.";
     }
 

@@ -19,7 +19,7 @@ public partial class OtpVerificationPage : ContentPage
         MaxLength = 6,
         HorizontalTextAlignment = TextAlignment.Center,
         TextColor = Color.FromArgb(Dark),
-        FontSize = 22,
+        FontSize = 18,
         BackgroundColor = Colors.Transparent
     };
     private readonly ActivityIndicator _busy = new() { Color = Color.FromArgb(Orange), IsVisible = false, IsRunning = false };
@@ -74,7 +74,7 @@ public partial class OtpVerificationPage : ContentPage
             TextColor = Color.FromArgb(Dark),
             WidthRequest = 62,
             HeightRequest = 38,
-            FontSize = 12,
+            FontSize = 13,
             Padding = new Thickness(0),
             HorizontalOptions = LayoutOptions.Start,
             Command = new Command(async () => await GoBackAsync())
@@ -85,7 +85,7 @@ public partial class OtpVerificationPage : ContentPage
         {
             Text = "Account Verification",
             TextColor = Color.FromArgb(Dark),
-            FontSize = 17,
+            FontSize = 18,
             FontAttributes = FontAttributes.Bold,
             HorizontalTextAlignment = TextAlignment.Center
         });
@@ -95,7 +95,7 @@ public partial class OtpVerificationPage : ContentPage
         {
             Text = $"We sent a verification code to {DisplayEmail(_email)}.",
             TextColor = Color.FromArgb(Muted),
-            FontSize = 12,
+            FontSize = 13,
             HorizontalTextAlignment = TextAlignment.Center
         });
 
@@ -133,7 +133,7 @@ public partial class OtpVerificationPage : ContentPage
         {
             Text = "M",
             TextColor = Color.FromArgb("#E94335"),
-            FontSize = 58,
+            FontSize = 18,
             FontAttributes = FontAttributes.Bold,
             HorizontalTextAlignment = TextAlignment.Center,
             VerticalTextAlignment = TextAlignment.Center
@@ -285,7 +285,7 @@ public partial class OtpVerificationPage : ContentPage
             TextColor = Colors.White,
             CornerRadius = 10,
             HeightRequest = 46,
-            FontSize = 12,
+            FontSize = 13,
             FontAttributes = FontAttributes.Bold,
             IsEnabled = isEnabled,
             Command = new Command(async () => await action())
