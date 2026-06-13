@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using BikeMate.Core.DTOs;
@@ -29,8 +30,9 @@ internal static class CustomerApiClient
             await SecureStorage.Default.SetAsync("primary_role", role);
             return true;
         }
-        catch
+        catch (Exception ex)
         {
+            Debug.WriteLine($"Demo account login failed for {email}: {ex}");
             return false;
         }
     }
@@ -91,8 +93,9 @@ internal static class CustomerApiClient
             using var http = await ApiConfig.CreateAuthorizedHttpClientAsync();
             return await GetAsync<PaymentDto>(http, $"payments/request/{requestId}/latest", cancellationToken);
         }
-        catch
+        catch (Exception ex)
         {
+            Debug.WriteLine($"Failed to fetch latest payment for request {requestId}: {ex}");
             return null;
         }
     }
@@ -213,8 +216,9 @@ internal static class CustomerApiClient
             using var http = await ApiConfig.CreateAuthorizedHttpClientAsync();
             return await GetAsync<LiveLocationDto>(http, $"location/request/{requestId}/latest", cancellationToken);
         }
-        catch
+        catch (Exception ex)
         {
+            Debug.WriteLine($"Failed to fetch latest location for request {requestId}: {ex}");
             return null;
         }
     }

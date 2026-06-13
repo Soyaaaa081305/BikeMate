@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Globalization;
 using System.Net;
 using BikeMate.Core.DTOs;
@@ -283,8 +284,9 @@ public abstract class MechanicPageBase : ContentPage
                 }
             }
         }
-        catch
+        catch (Exception ex)
         {
+            Debug.WriteLine($"Location resolution failed, using fallback: {ex}");
         }
 
         return (14.599512m, 120.984222m, null, true);

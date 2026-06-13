@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using Microsoft.Maui.ApplicationModel;
 using Microsoft.Maui.Devices.Sensors;
 
@@ -32,8 +33,9 @@ internal static class LocationService
             {
                 location = await Geolocation.Default.GetLocationAsync(new GeolocationRequest(GeolocationAccuracy.Best, TimeSpan.FromSeconds(15)));
             }
-            catch
+            catch (Exception ex)
             {
+                Debug.WriteLine($"Real-time geolocation failed, falling back to last known: {ex}");
                 location = await Geolocation.Default.GetLastKnownLocationAsync();
             }
 
@@ -72,8 +74,9 @@ internal static class LocationService
             var locality = string.Join(", ", new[] { place.Locality, place.AdminArea }.Where(x => !string.IsNullOrWhiteSpace(x)));
             return string.Join(", ", new[] { street, locality, place.CountryName }.Where(x => !string.IsNullOrWhiteSpace(x)));
         }
-        catch
+        catch (Exception ex)
         {
+            Debug.WriteLine($"Reverse geocoding failed: {ex}");
             return null;
         }
     }

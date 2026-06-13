@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Globalization;
 using System.Windows.Input;
 using BikeMate.Core.DTOs;
@@ -744,8 +745,9 @@ public sealed class EmergencyLiveCallPage : CustomerPageBase, IQueryAttributable
         {
             await EmergencyService.EndCallAsync(_requestId);
         }
-        catch
+        catch (Exception ex)
         {
+            Debug.WriteLine($"Emergency API end-call failed for request {_requestId}: {ex}");
         }
 
         await Shell.Current.GoToAsync($"{nameof(ActiveEmergencyTrackingPage)}?requestId={_requestId}");
