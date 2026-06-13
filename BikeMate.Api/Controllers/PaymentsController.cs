@@ -42,13 +42,17 @@ public sealed class PaymentsController(
         }
 
         var webhookSecret = configuration["PayMongo:WebhookSecret"];
-        if (!string.IsNullOrWhiteSpace(webhookSecret))
+        if (string.IsNullOrWhiteSpace(webhookSecret) ||
+            webhookSecret.StartsWith("YOUR_", StringComparison.OrdinalIgnoreCase))
         {
-            var signature = Request.Headers["Paymongo-Signature"].FirstOrDefault();
-            if (!IsValidPayMongoSignature(payloadJson, webhookSecret, signature))
-            {
-                return Unauthorized(new { error = "Invalid PayMongo signature." });
-            }
+            return StatusCode(StatusCodes.Status503ServiceUnavailable,
+                new { error = "PayMongo webhook secret is not configured." });
+        }
+
+        var signature = Request.Headers["Paymongo-Signature"].FirstOrDefault();
+        if (!IsValidPayMongoSignature(payloadJson, webhookSecret, signature))
+        {
+            return Unauthorized(new { error = "Invalid PayMongo signature." });
         }
 
         using var document = JsonDocument.Parse(payloadJson);
