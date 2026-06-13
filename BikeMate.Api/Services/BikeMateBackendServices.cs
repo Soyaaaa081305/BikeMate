@@ -11,6 +11,7 @@ using System.Text.Json;
 using BikeMate.Core.Constants;
 using BikeMate.Core.DTOs;
 using BikeMate.Core.Entities;
+using BikeMate.Core.Helpers;
 using BikeMate.Infrastructure.Data;
 using Google.Apis.Auth;
 using Microsoft.AspNetCore.Hosting;
@@ -670,21 +671,7 @@ public sealed class FileStorageService(
 
     private static string GuessContentType(string extension)
     {
-        return extension.ToLowerInvariant() switch
-        {
-            ".jpg" or ".jpeg" => "image/jpeg",
-            ".png" => "image/png",
-            ".webp" => "image/webp",
-            ".pdf" => "application/pdf",
-            ".txt" => "text/plain",
-            ".doc" => "application/msword",
-            ".docx" => "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-            ".mp4" => "video/mp4",
-            ".webm" => "video/webm",
-            ".mov" => "video/quicktime",
-            ".3gp" => "video/3gpp",
-            _ => "application/octet-stream"
-        };
+        return ContentTypeHelper.GuessFromExtension(extension);
     }
 }
 

@@ -99,24 +99,14 @@ internal static class RiderApiClient
         return await ReadAsync<LiveLocationDto>(response, cancellationToken);
     }
 
-    private static async Task<T> GetAsync<T>(HttpClient http, string endpoint, CancellationToken cancellationToken)
+    private static Task<T> GetAsync<T>(HttpClient http, string endpoint, CancellationToken cancellationToken)
     {
-        using var response = await http.GetAsync(endpoint, cancellationToken);
-        return await ReadAsync<T>(response, cancellationToken);
+        return ApiClientHelper.GetAsync<T>(http, endpoint, cancellationToken);
     }
 
-    private static async Task<T> ReadAsync<T>(HttpResponseMessage response, CancellationToken cancellationToken)
+    private static Task<T> ReadAsync<T>(HttpResponseMessage response, CancellationToken cancellationToken)
     {
-        if (!response.IsSuccessStatusCode)
-        {
-            var error = await response.Content.ReadAsStringAsync(cancellationToken);
-            throw new InvalidOperationException(string.IsNullOrWhiteSpace(error)
-                ? $"API request failed with {(int)response.StatusCode}."
-                : error);
-        }
-
-        return await response.Content.ReadFromJsonAsync<T>(cancellationToken)
-            ?? throw new InvalidOperationException("The API returned an empty response.");
+        return ApiClientHelper.ReadAsync<T>(response, cancellationToken);
     }
 }
 

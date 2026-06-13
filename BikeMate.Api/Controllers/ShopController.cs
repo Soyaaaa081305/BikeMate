@@ -259,7 +259,7 @@ public sealed class ShopController(BikeMateDbContext db) : ControllerBase
             .Include(x => x.PaymentStatus)
             .Where(x => x.Request!.ShopId == shop.ShopId)
             .OrderByDescending(x => x.CreatedAt)
-            .Select(x => new PaymentDto(x.PaymentId, x.RequestId, x.PaymentStatus!.StatusName, x.Amount, x.Currency, x.ProviderName, x.CheckoutUrl, x.ProviderReferenceNumber, x.CreatedAt, x.PaidAt))
+            .Select(x => x.ToDto())
             .ToArrayAsync(cancellationToken));
     }
 
