@@ -201,7 +201,8 @@ public sealed class EmailService(
         if (!response.IsSuccessStatusCode)
         {
             var error = await response.Content.ReadAsStringAsync(cancellationToken);
-            logger.LogWarning("SendGrid rejected email to {Email}. Status: {Status}. Body: {Body}", toEmail, response.StatusCode, error);
+            logger.LogError("SendGrid rejected email to {Email}. Status: {Status}. Body: {Body}", toEmail, response.StatusCode, error);
+            throw new InvalidOperationException($"Email delivery failed (HTTP {(int)response.StatusCode}). Check the SendGrid API key and sender identity.");
         }
     }
 }

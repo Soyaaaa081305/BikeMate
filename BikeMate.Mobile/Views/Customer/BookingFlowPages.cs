@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Globalization;
 using System.Net;
 using BikeMate.Core.DTOs;
@@ -678,8 +679,9 @@ internal static class BookingVisuals
             {
                 location = await Geolocation.Default.GetLocationAsync(new GeolocationRequest(GeolocationAccuracy.Best, TimeSpan.FromSeconds(15)));
             }
-            catch
+            catch (Exception ex)
             {
+                Debug.WriteLine($"Real-time geolocation failed, falling back to last known: {ex}");
                 location = await Geolocation.Default.GetLastKnownLocationAsync();
             }
 
@@ -711,8 +713,9 @@ internal static class BookingVisuals
                     }
                 }
             }
-            catch
+            catch (Exception ex)
             {
+                Debug.WriteLine($"Reverse geocoding failed: {ex}");
                 addressLine = $"Lat {location.Latitude:0.000000}, Lng {location.Longitude:0.000000}";
             }
 
@@ -766,8 +769,9 @@ internal static class BookingVisuals
         {
             return await Microsoft.Maui.ApplicationModel.Launcher.Default.OpenAsync(uri);
         }
-        catch
+        catch (Exception ex)
         {
+            Debug.WriteLine($"Failed to open URI {uri}: {ex}");
             return false;
         }
     }
