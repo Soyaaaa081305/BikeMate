@@ -43,6 +43,9 @@ internal sealed partial class EmergencyLiveCallViewModel : ObservableObject
     private bool isSpeakerEnabled = true;
 
     [ObservableProperty]
+    private bool isBusy;
+
+    [ObservableProperty]
     private string statusMessage = "Connecting with BikeMate support. Stay on the line.";
 }
 

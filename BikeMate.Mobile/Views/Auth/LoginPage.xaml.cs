@@ -22,8 +22,7 @@ public partial class LoginPage : ContentPage
 
     private async void OnGoogleClicked(object? sender, EventArgs e)
     {
-        BusyIndicator.IsVisible = true;
-        BusyIndicator.IsRunning = true;
+        SetBusy(true);
         try
         {
             var auth = await GoogleSignInService.SignInAsync(AppRoles.Customer);
@@ -32,15 +31,16 @@ public partial class LoginPage : ContentPage
         }
         catch (TaskCanceledException)
         {
+            await DisplayAlertAsync("Google sign-in cancelled", "Google sign-in was cancelled. You can try again anytime.", "OK");
         }
         catch (Exception ex)
         {
-            await DisplayAlertAsync("Google sign-in failed", ex.Message, "OK");
+            System.Diagnostics.Debug.WriteLine($"Google sign-in failed: {ex}");
+            await DisplayAlertAsync("Google sign-in unavailable", ex.Message, "OK");
         }
         finally
         {
-            BusyIndicator.IsRunning = false;
-            BusyIndicator.IsVisible = false;
+            SetBusy(false);
         }
     }
 
@@ -51,8 +51,7 @@ public partial class LoginPage : ContentPage
 
     private async Task SignInAsync()
     {
-        BusyIndicator.IsVisible = true;
-        BusyIndicator.IsRunning = true;
+        SetBusy(true);
         var navigatedAway = false;
 
         try
@@ -77,19 +76,26 @@ public partial class LoginPage : ContentPage
             var error = await response.Content.ReadAsStringAsync();
             await DisplayAlertAsync("Sign in failed", string.IsNullOrWhiteSpace(error) ? "Check your email and password." : error, "OK");
         }
-        catch
+        catch (Exception ex)
         {
-            navigatedAway = true;
-            await AppNavigation.NavigateByRoleAsync(AppNavigation.InferRoleFromEmail(EmailEntry.Text ?? string.Empty));
+            System.Diagnostics.Debug.WriteLine($"Sign in failed: {ex}");
+            await DisplayAlertAsync("Sign in unavailable", "Could not reach the BikeMate API. Start the API and try again.", "OK");
         }
         finally
         {
             if (!navigatedAway)
             {
-                BusyIndicator.IsRunning = false;
-                BusyIndicator.IsVisible = false;
+                SetBusy(false);
             }
         }
+    }
+
+    private void SetBusy(bool value)
+    {
+        BusyIndicator.IsVisible = value;
+        BusyIndicator.IsRunning = value;
+        SignInButton.IsEnabled = !value;
+        GoogleButton.IsEnabled = !value;
     }
 
     private static string PickPrimaryRole(IReadOnlyCollection<string> roles)

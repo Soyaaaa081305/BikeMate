@@ -310,7 +310,7 @@ namespace BikeMate.Views.Mechanic
 {
     using BikeMate.Views.Shared;
 
-    public sealed class MechanicDashboardPage() : PrototypePage(
+    public sealed class PrototypeMechanicDashboardPage() : PrototypePage(
         "Mechanic Dashboard",
         "Assigned jobs, status, rating, and live availability.",
         ["Online", "4.80 rating", "12 jobs"],
@@ -321,7 +321,7 @@ namespace BikeMate.Views.Mechanic
         ],
         "rider/dashboard");
 
-    public sealed class MechanicJobsPage() : PrototypePage(
+    public sealed class PrototypeMechanicJobsPage() : PrototypePage(
         "Jobs",
         "Incoming and assigned service requests.",
         ["Accept", "Reject", "Details"],
@@ -332,7 +332,7 @@ namespace BikeMate.Views.Mechanic
         ],
         "rider/requests/incoming");
 
-    public sealed class MechanicJobDetailsPage() : PrototypePage(
+    public sealed class PrototypeMechanicJobDetailsPage() : PrototypePage(
         "Job Details",
         "Customer, motorcycle, issue, location, and completion.",
         ["Customer", "Motorcycle", "Complete"],
@@ -343,7 +343,7 @@ namespace BikeMate.Views.Mechanic
         ],
         "rider/jobs/current");
 
-    public sealed class MechanicMapPage() : PrototypePage(
+    public sealed class PrototypeMechanicMapPage() : PrototypePage(
         "Map",
         "Service location and navigation handoff.",
         ["Location", "Route", "Share"],
@@ -354,7 +354,7 @@ namespace BikeMate.Views.Mechanic
         ],
         "rider/jobs/current");
 
-    public sealed class MechanicMessagesPage() : PrototypePage(
+    public sealed class PrototypeMechanicMessagesPage() : PrototypePage(
         "Messages",
         "Job conversations with customers and shops.",
         ["Realtime", "Job chat", "Read"],
@@ -365,7 +365,7 @@ namespace BikeMate.Views.Mechanic
         ],
         "conversations");
 
-    public sealed class MechanicHistoryPage() : PrototypePage(
+    public sealed class PrototypeMechanicHistoryPage() : PrototypePage(
         "History",
         "Completed, cancelled, and rejected jobs.",
         ["Completed", "Cancelled", "Rating"],
@@ -376,7 +376,7 @@ namespace BikeMate.Views.Mechanic
         ],
         "rider/jobs/history");
 
-    public sealed class MechanicProfilePage() : PrototypePage(
+    public sealed class PrototypeMechanicProfilePage() : PrototypePage(
         "Profile",
         "Verification, availability, experience, and performance.",
         ["Verified", "Available", "Profile"],
@@ -392,7 +392,7 @@ namespace BikeMate.Views.Admin
 {
     using BikeMate.Views.Shared;
 
-    public sealed class AdminDashboardPage() : PrototypePage(
+    public sealed class PrototypeAdminDashboardPage() : PrototypePage(
         "Admin Dashboard",
         "Platform analytics from backend database queries.",
         ["Users", "Requests", "Revenue"],
@@ -403,7 +403,7 @@ namespace BikeMate.Views.Admin
         ],
         "admin/dashboard");
 
-    public sealed class AdminUsersPage() : PrototypePage(
+    public sealed class PrototypeAdminUsersPage() : PrototypePage(
         "Users",
         "Manage users, roles, and account status.",
         ["Activate", "Suspend", "Roles"],
@@ -414,7 +414,7 @@ namespace BikeMate.Views.Admin
         ],
         "admin/users");
 
-    public sealed class AdminMechanicsVerificationPage() : PrototypePage(
+    public sealed class PrototypeAdminMechanicsVerificationPage() : PrototypePage(
         "Mechanic Verification",
         "Verify or reject mechanic applications.",
         ["Pending", "Verify", "Reject"],
@@ -425,7 +425,7 @@ namespace BikeMate.Views.Admin
         ],
         "admin/mechanics/pending");
 
-    public sealed class AdminShopsVerificationPage() : PrototypePage(
+    public sealed class PrototypeAdminShopsVerificationPage() : PrototypePage(
         "Shop Verification",
         "Verify shop documents and profile data.",
         ["Permit", "Image", "Status"],
@@ -436,7 +436,7 @@ namespace BikeMate.Views.Admin
         ],
         "admin/shops/pending");
 
-    public sealed class AdminRequestsPage() : PrototypePage(
+    public sealed class PrototypeAdminRequestsPage() : PrototypePage(
         "Requests",
         "Monitor platform service requests.",
         ["Pending", "Active", "Completed"],
@@ -447,7 +447,7 @@ namespace BikeMate.Views.Admin
         ],
         "admin/service-requests");
 
-    public sealed class AdminPaymentsPage() : PrototypePage(
+    public sealed class PrototypeAdminPaymentsPage() : PrototypePage(
         "Payments",
         "Monitor PayMongo status and payment events.",
         ["Paid", "Pending", "Webhook"],
@@ -458,7 +458,7 @@ namespace BikeMate.Views.Admin
         ],
         "admin/payments");
 
-    public sealed class AdminReportsPage() : PrototypePage(
+    public sealed class PrototypeAdminReportsPage() : PrototypePage(
         "Reports",
         "Revenue, top services, and top mechanics.",
         ["Revenue", "Services", "Mechanics"],
@@ -469,7 +469,7 @@ namespace BikeMate.Views.Admin
         ],
         "admin/reports/top-services");
 
-    public sealed class AdminAuditLogsPage() : PrototypePage(
+    public sealed class PrototypeAdminAuditLogsPage() : PrototypePage(
         "Audit Logs",
         "System actions and data changes.",
         ["Actor", "Entity", "Changes"],
@@ -485,7 +485,7 @@ namespace BikeMate.Views.ShopAdmin
 {
     using BikeMate.Views.Shared;
 
-    public sealed class ShopDashboardPage() : PrototypePage(
+    public sealed class PrototypeShopDashboardPage() : PrototypePage(
         "Shop Dashboard",
         "Bookings, services, products, staff, and earnings.",
         ["Bookings", "Stock", "Earnings"],
@@ -496,7 +496,7 @@ namespace BikeMate.Views.ShopAdmin
         ],
         "shop/dashboard");
 
-    public sealed class ShopProfilePage() : PrototypePage(
+    public sealed class PrototypeShopProfilePage() : PrototypePage(
         "Shop Profile",
         "Edit business details, address, permit, and images.",
         ["Profile", "Permit", "Coordinates"],
@@ -507,7 +507,7 @@ namespace BikeMate.Views.ShopAdmin
         ],
         "shop/profile");
 
-    public sealed class ShopServicesPage() : PrototypePage(
+    public sealed class PrototypeShopServicesPage() : PrototypePage(
         "Services",
         "Add, edit, and disable shop services.",
         ["Categories", "Pricing", "Images"],
@@ -518,7 +518,7 @@ namespace BikeMate.Views.ShopAdmin
         ],
         "shop/services");
 
-    public sealed class ShopServiceEditPage() : PrototypePage(
+    public sealed class PrototypeShopServiceEditPage() : PrototypePage(
         "Edit Service",
         "Service name, category, price, duration, and images.",
         ["Name", "Price", "Active"],
@@ -529,7 +529,7 @@ namespace BikeMate.Views.ShopAdmin
         ],
         "shop/services");
 
-    public sealed class ShopProductsPage() : PrototypePage(
+    public sealed class PrototypeShopProductsPage() : PrototypePage(
         "Products",
         "Manage parts, stock, price, and product images.",
         ["Stock", "Price", "Images"],
@@ -540,7 +540,7 @@ namespace BikeMate.Views.ShopAdmin
         ],
         "shop/inventory");
 
-    public sealed class ShopProductEditPage() : PrototypePage(
+    public sealed class PrototypeShopProductEditPage() : PrototypePage(
         "Edit Product",
         "Product details, images, and stock quantity.",
         ["Name", "Stock", "Active"],
@@ -551,7 +551,7 @@ namespace BikeMate.Views.ShopAdmin
         ],
         "shop/inventory");
 
-    public sealed class ShopBookingsPage() : PrototypePage(
+    public sealed class PrototypeShopBookingsPage() : PrototypePage(
         "Bookings",
         "Incoming, active, and completed shop bookings.",
         ["Accept", "Reject", "Assign"],
@@ -562,7 +562,7 @@ namespace BikeMate.Views.ShopAdmin
         ],
         "shop/bookings");
 
-    public sealed class ShopMechanicsPage() : PrototypePage(
+    public sealed class PrototypeShopMechanicsPage() : PrototypePage(
         "Mechanics",
         "Assign mechanics and manage shop staff.",
         ["Staff", "Assign", "Active"],
@@ -573,7 +573,7 @@ namespace BikeMate.Views.ShopAdmin
         ],
         "shop/mechanics");
 
-    public sealed class ShopEarningsPage() : PrototypePage(
+    public sealed class PrototypeShopEarningsPage() : PrototypePage(
         "Earnings",
         "Paid bookings and shop revenue.",
         ["Revenue", "Payments", "Receipts"],
@@ -584,7 +584,7 @@ namespace BikeMate.Views.ShopAdmin
         ],
         "shop/payments");
 
-    public sealed class ShopSchedulePage() : PrototypePage(
+    public sealed class PrototypeShopSchedulePage() : PrototypePage(
         "Shop Schedule",
         "Operating hours and upcoming service calendar.",
         ["Hours", "Calendar", "Staff"],

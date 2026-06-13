@@ -66,23 +66,29 @@ public sealed class RiderController(
     }
 
     [HttpGet("requests/incoming")]
-    public async Task<ActionResult<IReadOnlyCollection<ServiceRequestDto>>> Incoming(CancellationToken cancellationToken)
+    public async Task<ActionResult<IReadOnlyCollection<ServiceRequestDto>>> Incoming([FromQuery] decimal radiusKm = 8m, CancellationToken cancellationToken = default)
     {
-        return Ok(await serviceRequestService.Query()
-            .Where(x => x.MechanicId == null && x.CurrentStatus!.StatusName == "pending")
+        var mechanic = await GetMechanicAsync(cancellationToken);
+        var requests = await serviceRequestService.Query()
+            .Where(x => x.MechanicId == null &&
+                        x.CurrentStatus!.StatusName == "pending" &&
+                        !x.IssueDescription.StartsWith("[EMERGENCY]"))
             .OrderByDescending(x => x.CreatedAt)
-            .Select(ServiceRequestService.ToDtoExpression())
-            .ToArrayAsync(cancellationToken));
+            .ToArrayAsync(cancellationToken);
+
+        return Ok(ToNearbyRequestDtos(requests, mechanic, radiusKm));
     }
 
     [HttpGet("requests/emergency")]
-    public async Task<ActionResult<IReadOnlyCollection<ServiceRequestDto>>> Emergency(CancellationToken cancellationToken)
+    public async Task<ActionResult<IReadOnlyCollection<ServiceRequestDto>>> Emergency([FromQuery] decimal radiusKm = 12m, CancellationToken cancellationToken = default)
     {
-        return Ok(await serviceRequestService.Query()
+        var mechanic = await GetMechanicAsync(cancellationToken);
+        var requests = await serviceRequestService.Query()
             .Where(x => x.MechanicId == null && x.IssueDescription.StartsWith("[EMERGENCY]"))
             .OrderByDescending(x => x.CreatedAt)
-            .Select(ServiceRequestService.ToDtoExpression())
-            .ToArrayAsync(cancellationToken));
+            .ToArrayAsync(cancellationToken);
+
+        return Ok(ToNearbyRequestDtos(requests, mechanic, radiusKm));
     }
 
     [HttpGet("jobs/current")]
@@ -261,5 +267,66 @@ public sealed class RiderController(
             mechanic.AvailabilityStatus,
             mechanic.AverageRating,
             mechanic.TotalCompletedJobs);
+    }
+
+    private static IReadOnlyCollection<ServiceRequestDto> ToNearbyRequestDtos(IEnumerable<ServiceRequest> requests, Mechanic mechanic, decimal radiusKm)
+    {
+        var mechanicHasLocation = mechanic.CurrentLatitude is not null && mechanic.CurrentLongitude is not null;
+
+        var rows = requests
+            .Select(request => new
+            {
+                Request = request,
+                Distance = mechanicHasLocation && request.ServiceLatitude is not null && request.ServiceLongitude is not null
+                    ? DistanceKm(mechanic.CurrentLatitude!.Value, mechanic.CurrentLongitude!.Value, request.ServiceLatitude.Value, request.ServiceLongitude.Value)
+                    : (decimal?)null
+            })
+            .Where(x => !mechanicHasLocation || x.Distance is not null && x.Distance <= radiusKm)
+            .OrderBy(x => x.Distance ?? 999m)
+            .ThenByDescending(x => x.Request.CreatedAt)
+            .Take(30)
+            .Select(x => ToRequestDto(x.Request, x.Distance))
+            .ToArray();
+
+        return rows;
+    }
+
+    private static ServiceRequestDto ToRequestDto(ServiceRequest request, decimal? distanceKm)
+    {
+        return new ServiceRequestDto(
+            request.RequestId,
+            request.CurrentStatus!.StatusName,
+            request.Client!.User!.FirstName + " " + request.Client.User.LastName,
+            request.Mechanic is null ? null : request.Mechanic.User!.FirstName + " " + request.Mechanic.User.LastName,
+            request.Shop?.ShopName,
+            request.ShopService?.ServiceName,
+            request.IssueDescription,
+            request.ServiceLocationAddress,
+            request.ScheduledAt,
+            request.EstimatedTotal,
+            request.FinalTotal,
+            request.CreatedAt,
+            request.ServiceLatitude,
+            request.ServiceLongitude,
+            distanceKm);
+    }
+
+    private static decimal DistanceKm(decimal latitudeA, decimal longitudeA, decimal latitudeB, decimal longitudeB)
+    {
+        const double earthRadiusKm = 6371d;
+        var lat1 = ToRadians((double)latitudeA);
+        var lat2 = ToRadians((double)latitudeB);
+        var deltaLat = ToRadians((double)(latitudeB - latitudeA));
+        var deltaLng = ToRadians((double)(longitudeB - longitudeA));
+        var a = Math.Sin(deltaLat / 2) * Math.Sin(deltaLat / 2) +
+                Math.Cos(lat1) * Math.Cos(lat2) *
+                Math.Sin(deltaLng / 2) * Math.Sin(deltaLng / 2);
+        var c = 2 * Math.Atan2(Math.Sqrt(a), Math.Sqrt(1 - a));
+        return Math.Round((decimal)(earthRadiusKm * c), 2);
+    }
+
+    private static double ToRadians(double degrees)
+    {
+        return degrees * Math.PI / 180d;
     }
 }

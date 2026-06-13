@@ -88,6 +88,19 @@ internal static class CustomerApiClient
         return await GetAsync<IReadOnlyList<ConversationSummaryDto>>(http, "conversations", cancellationToken);
     }
 
+    public static async Task<IReadOnlyList<NotificationDto>> GetNotificationsAsync(CancellationToken cancellationToken = default)
+    {
+        using var http = await ApiConfig.CreateAuthorizedHttpClientAsync();
+        return await GetAsync<IReadOnlyList<NotificationDto>>(http, "notifications", cancellationToken);
+    }
+
+    public static async Task MarkNotificationReadAsync(int notificationId, CancellationToken cancellationToken = default)
+    {
+        using var http = await ApiConfig.CreateAuthorizedHttpClientAsync();
+        using var response = await http.PutAsync($"notifications/{notificationId}/read", null, cancellationToken);
+        await ReadAsync<object>(response, cancellationToken);
+    }
+
     public static async Task<IReadOnlyList<MessageDto>> GetMessagesAsync(int conversationId, CancellationToken cancellationToken = default)
     {
         using var http = await ApiConfig.CreateAuthorizedHttpClientAsync();
@@ -223,3 +236,13 @@ internal sealed record CustomerMeDto(
     IReadOnlyList<MotorcycleDto> Motorcycles);
 
 internal sealed record PlaceholderFileDto(string Url);
+
+internal sealed record NotificationDto(
+    int NotificationId,
+    int UserId,
+    string? NotificationType,
+    string Title,
+    string Message,
+    string? DataJson,
+    bool IsRead,
+    DateTime CreatedAt);

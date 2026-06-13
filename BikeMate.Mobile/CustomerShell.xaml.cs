@@ -6,6 +6,7 @@ public partial class CustomerShell : Shell
     {
         InitializeComponent();
         Routing.RegisterRoute(nameof(Views.Customer.CustomerProfilePage), typeof(Views.Customer.CustomerProfilePage));
+        Routing.RegisterRoute(nameof(Views.Customer.CustomerNotificationsPage), typeof(Views.Customer.CustomerNotificationsPage));
         Routing.RegisterRoute(nameof(Views.Customer.CustomerHelpDeskPage), typeof(Views.Customer.CustomerHelpDeskPage));
         Routing.RegisterRoute(nameof(Views.Customer.CustomerChatPage), typeof(Views.Customer.CustomerChatPage));
         Routing.RegisterRoute(nameof(Views.Customer.BookServicePage), typeof(Views.Customer.BookServicePage));

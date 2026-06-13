@@ -141,7 +141,10 @@ public sealed record ServiceRequestDto(
     DateTime? ScheduledAt,
     decimal EstimatedTotal,
     decimal FinalTotal,
-    DateTime CreatedAt);
+    DateTime CreatedAt,
+    decimal? ServiceLatitude = null,
+    decimal? ServiceLongitude = null,
+    decimal? DistanceKm = null);
 
 public sealed record UpdateRequestStatusDto(string Status, string? Notes);
 public sealed record AssignMechanicDto(int MechanicId);
@@ -205,7 +208,12 @@ public sealed record EmergencyCallSessionDto(
     string CallStatus,
     DateTime StartedAt,
     DateTime? EndedAt,
-    string Message);
+    string Message,
+    string? AppId = null,
+    string? ChannelName = null,
+    uint? Uid = null,
+    string? Token = null,
+    DateTime? ExpiresAt = null);
 
 public sealed record ConversationDto(int ConversationId, int? RequestId, string ConversationType, DateTime? LastMessageAt);
 public sealed record ConversationSummaryDto(

@@ -13,8 +13,10 @@ namespace BikeMate
                 .UseMauiApp<App>()
                 .ConfigureFonts(fonts =>
                 {
-                    fonts.AddFont("OpenSans-Regular.ttf", "OpenSansRegular");
-                    fonts.AddFont("OpenSans-Semibold.ttf", "OpenSansSemibold");
+                    fonts.AddFont("PublicSans.ttf", "PublicSans");
+                    fonts.AddFont("Inter.ttf", "Inter");
+                    fonts.AddFont("PTSansCaption-Regular.ttf", "PTSansCaption");
+                    fonts.AddFont("PTSansCaption-Bold.ttf", "PTSansCaptionBold");
                 });
 
             builder.Services.AddHttpClient("BikeMateApi", client =>

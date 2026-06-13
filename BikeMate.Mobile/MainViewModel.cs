@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
+using System.Diagnostics;
 using System.Net.Http.Json;
 using System.Runtime.CompilerServices;
 using System.Threading.Tasks;
@@ -10,18 +11,20 @@ using BikeMate.Core.DTOs;
 using BikeMate.Helpers;
 using BikeMate.Services;
 using Microsoft.Maui.Controls;
+using Microsoft.Maui.Storage;
 
 namespace BikeMate
 {
     public class MainViewModel : INotifyPropertyChanged
     {
         private int _currentPosition;
-        private bool _isOnboardingVisible = true;
+        private bool _isStartupVisible = true;
+        private bool _isOnboardingVisible;
         private bool _isPaywallVisible = false;
         private bool _isLoginVisible = false;
         private string _email = "customer@bikemate.test";
         private string _password = "Password123!";
-        private string _loginStatus = "Choose a demo mode or sign in with an account.";
+        private string _loginStatus = "Checking saved session...";
 
         public ObservableCollection<OnboardingItem> BoardingItems { get; set; }
 
@@ -40,6 +43,12 @@ namespace BikeMate
             BoardingItems.Count == 0
                 ? "Continue"
                 : BoardingItems[Math.Clamp(CurrentPosition, 0, BoardingItems.Count - 1)].ButtonText;
+
+        public bool IsStartupVisible
+        {
+            get => _isStartupVisible;
+            set { _isStartupVisible = value; OnPropertyChanged(); }
+        }
 
         public bool IsOnboardingVisible
         {
@@ -109,6 +118,42 @@ namespace BikeMate
             CreateAccountCommand = new Command(async () => await OpenCreateAccountAsync());
             ForgotPasswordCommand = new Command(async () => await ForgotPasswordAsync());
             GoogleLoginCommand = new Command(async () => await LoginWithGoogleAsync());
+
+            _ = InitializeStartupAsync();
+        }
+
+        private async Task InitializeStartupAsync()
+        {
+            try
+            {
+                await Task.Delay(100);
+                if (Preferences.Default.Get(AppNavigation.ForceLoginPreferenceKey, false))
+                {
+                    Preferences.Default.Remove(AppNavigation.ForceLoginPreferenceKey);
+                    ShowLogin();
+                    LoginStatus = "You have been signed out.";
+                    return;
+                }
+
+                var token = await SecureStorage.Default.GetAsync("access_token");
+                if (!string.IsNullOrWhiteSpace(token))
+                {
+                    var role = await SecureStorage.Default.GetAsync("primary_role");
+                    await AppNavigation.NavigateByRoleAsync(string.IsNullOrWhiteSpace(role) ? AppRoles.Customer : role);
+                    await PaymentReturnService.TryNavigateToCheckoutAsync();
+                    return;
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"Startup session restore failed: {ex}");
+            }
+
+            IsStartupVisible = false;
+            IsOnboardingVisible = true;
+            IsPaywallVisible = false;
+            IsLoginVisible = false;
+            LoginStatus = "Sign in with your BikeMate account or a seeded test account.";
         }
 
         private void GoToNextSlide()
@@ -125,6 +170,7 @@ namespace BikeMate
 
         private void ShowLogin()
         {
+            IsStartupVisible = false;
             IsOnboardingVisible = false;
             IsPaywallVisible = false;
             IsLoginVisible = true;
@@ -152,8 +198,9 @@ namespace BikeMate
             var signedIn = await CustomerApiClient.TryLoginDemoAccountAsync(Email, selectedRole);
             if (!signedIn)
             {
-                LoginStatus = "API is offline. Opening the selected classroom demo mode with sample data.";
-                await SecureStorage.Default.SetAsync("primary_role", selectedRole);
+                LoginStatus = "Could not sign in to the seeded account. Start the BikeMate API and database, then try again.";
+                await Shell.Current.DisplayAlertAsync("Sign in unavailable", LoginStatus, "OK");
+                return;
             }
 
             await AppNavigation.NavigateByRoleAsync(selectedRole);
@@ -173,41 +220,16 @@ namespace BikeMate
 
         private async Task ForgotPasswordAsync()
         {
-            var email = await Shell.Current.DisplayPromptAsync(
-                "Forgot password",
-                "Enter your email address.",
-                "Send",
-                "Cancel",
-                "email@example.com",
-                keyboard: Keyboard.Email,
-                initialValue: Email);
-
-            if (string.IsNullOrWhiteSpace(email))
-            {
-                return;
-            }
-
             try
             {
-                using var http = ApiConfig.CreateHttpClient();
-                var response = await http.PostAsJsonAsync("auth/forgot-password", new ForgotPasswordRequestDto(email.Trim()));
-                if (response.IsSuccessStatusCode)
-                {
-                    await Shell.Current.DisplayAlertAsync(
-                        "Password reset",
-                        "Request sent. In local development, the reset token is printed in the API terminal/log.",
-                        "OK");
-                    return;
-                }
-
-                await Shell.Current.DisplayAlertAsync("Password reset failed", await response.Content.ReadAsStringAsync(), "OK");
+                var route = string.IsNullOrWhiteSpace(Email)
+                    ? nameof(Views.Auth.PasswordResetPage)
+                    : $"{nameof(Views.Auth.PasswordResetPage)}?email={Uri.EscapeDataString(Email)}";
+                await Shell.Current.GoToAsync(route);
             }
-            catch
+            catch (Exception ex)
             {
-                await Shell.Current.DisplayAlertAsync(
-                    "API offline",
-                    "Start the BikeMate API first, then try forgot password again.",
-                    "OK");
+                await Shell.Current.DisplayAlertAsync("Password reset", $"Could not open reset flow: {ex.Message}", "OK");
             }
         }
 
@@ -260,10 +282,9 @@ namespace BikeMate
             }
             catch
             {
-                LoginStatus = "API is offline. Opening the selected classroom demo mode.";
+                LoginStatus = "Could not reach the BikeMate API. Start the API and try again.";
+                await Shell.Current.DisplayAlertAsync("Sign in unavailable", LoginStatus, "OK");
             }
-
-            await AppNavigation.NavigateByRoleAsync(AppNavigation.InferRoleFromEmail(Email));
         }
 
         private static string PickPrimaryRole(IReadOnlyCollection<string> roles)

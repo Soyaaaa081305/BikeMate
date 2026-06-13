@@ -17,7 +17,8 @@ namespace BikeMate.Api.Controllers;
 [Authorize]
 public sealed class EmergencyController(
     BikeMateDbContext db,
-    IHubContext<EmergencyHub> hubContext) : ControllerBase
+    IHubContext<EmergencyHub> hubContext,
+    IAgoraTokenService agoraTokenService) : ControllerBase
 {
     [HttpPost("request")]
     [Authorize(Roles = AppRoles.Customer)]
@@ -134,16 +135,13 @@ public sealed class EmergencyController(
     public async Task<ActionResult<EmergencyCallSessionDto>> StartCall(int requestId, CancellationToken cancellationToken)
     {
         var request = await GetCustomerRequestAsync(requestId, cancellationToken);
+        var startedAt = DateTime.UtcNow;
         await SetStatusAsync(request, "call_connecting", User.GetUserId(), "Emergency support call started.", cancellationToken);
+        var session = agoraTokenService.CreateEmergencyCallSession(requestId, User.GetUserId(), startedAt);
         await hubContext.Clients.Group(EmergencyHub.GetEmergencyGroup(requestId))
-            .SendAsync("EmergencyCallConnected", requestId, cancellationToken);
+            .SendAsync("EmergencyCallConnected", session, cancellationToken);
 
-        return Ok(new EmergencyCallSessionDto(
-            requestId,
-            "Connecting",
-            DateTime.UtcNow,
-            null,
-            "BikeMate support call placeholder started. Add a WebRTC, Agora, or Twilio provider here."));
+        return Ok(session);
     }
 
     [HttpPost("request/{requestId:int}/call/end")]

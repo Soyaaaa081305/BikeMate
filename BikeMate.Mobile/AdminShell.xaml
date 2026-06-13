@@ -8,10 +8,10 @@
     Shell.NavBarIsVisible="False">
 
     <TabBar>
-        <ShellContent Title="Dashboard" ContentTemplate="{DataTemplate admin:AdminDashboardPage}" />
-        <ShellContent Title="Users" ContentTemplate="{DataTemplate admin:AdminUsersPage}" />
-        <ShellContent Title="Requests" ContentTemplate="{DataTemplate admin:AdminRequestsPage}" />
-        <ShellContent Title="Payments" ContentTemplate="{DataTemplate admin:AdminPaymentsPage}" />
-        <ShellContent Title="Reports" ContentTemplate="{DataTemplate admin:AdminReportsPage}" />
+        <ShellContent Title="Dashboard" Route="AdminDashboardPage" ContentTemplate="{DataTemplate admin:AdminDashboardPage}" />
+        <ShellContent Title="Users" Route="AdminUsersPage" ContentTemplate="{DataTemplate admin:AdminUsersPage}" />
+        <ShellContent Title="Requests" Route="AdminRequestsPage" ContentTemplate="{DataTemplate admin:AdminRequestsPage}" />
+        <ShellContent Title="Payments" Route="AdminPaymentsPage" ContentTemplate="{DataTemplate admin:AdminPaymentsPage}" />
+        <ShellContent Title="Reports" Route="AdminReportsPage" ContentTemplate="{DataTemplate admin:AdminReportsPage}" />
     </TabBar>
 </Shell>

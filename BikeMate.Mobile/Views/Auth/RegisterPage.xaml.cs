@@ -3,7 +3,6 @@ using BikeMate.Core.Constants;
 using BikeMate.Core.DTOs;
 using BikeMate.Helpers;
 using Microsoft.Maui.Controls.Shapes;
-using Microsoft.Maui.Media;
 using Microsoft.Maui.Storage;
 
 namespace BikeMate.Views.Auth;
@@ -337,22 +336,12 @@ public partial class RegisterPage : ContentPage
     {
         try
         {
-            IEnumerable<FileResult>? photos = null;
-            try
+            var result = await FilePicker.Default.PickAsync(new PickOptions
             {
-                photos = await MediaPicker.Default.PickPhotosAsync(new MediaPickerOptions { Title = "Upload a valid ID" });
-            }
-            catch (FeatureNotSupportedException)
-            {
-                var fallback = await FilePicker.Default.PickAsync(new PickOptions
-                {
-                    PickerTitle = "Upload a valid ID",
-                    FileTypes = FilePickerFileType.Images
-                });
-                photos = fallback is null ? null : [fallback];
-            }
+                PickerTitle = "Upload a valid ID",
+                FileTypes = FilePickerFileType.Images
+            });
 
-            var result = photos?.FirstOrDefault();
             if (result is null)
             {
                 return;
@@ -505,9 +494,20 @@ public partial class RegisterPage : ContentPage
             FontSize = size,
             TextColor = Color.FromArgb(color),
             FontAttributes = attributes,
+            FontFamily = FontFor(size, attributes),
             HorizontalTextAlignment = alignment,
             LineBreakMode = LineBreakMode.WordWrap
         };
+    }
+
+    private static string FontFor(double size, FontAttributes attributes = FontAttributes.None)
+    {
+        if (size <= 11)
+        {
+            return (attributes & FontAttributes.Bold) != 0 ? "PTSansCaptionBold" : "PTSansCaption";
+        }
+
+        return size >= 16 || (attributes & FontAttributes.Bold) != 0 ? "Inter" : "PublicSans";
     }
 
     private static View Footnote(string text = "Fields with asterisk (*) are required.")

@@ -1,4 +1,6 @@
 using System.IdentityModel.Tokens.Jwt;
+using System.Buffers.Binary;
+using System.IO.Compression;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Security.Claims;
@@ -46,6 +48,7 @@ public sealed class JwtService(IConfiguration configuration) : IJwtService
             issuer,
             audience,
             claims,
+            notBefore: DateTime.UtcNow.AddMinutes(-5),
             expires: expiresAt.UtcDateTime,
             signingCredentials: credentials);
 
@@ -144,10 +147,10 @@ public sealed class EmailService(
         return SendAsync(
             user.Email,
             "Reset your BikeMate password",
-            $"Use this BikeMate password reset token: {token}",
-            $"<p>Use this BikeMate password reset token:</p><p><strong>{token}</strong></p>",
+            $"Your BikeMate password reset code is {token}. It expires in 15 minutes.",
+            $"<p>Your BikeMate password reset code is <strong>{token}</strong>.</p><p>It expires in 15 minutes.</p>",
             cancellationToken,
-            fallbackLog: "Prototype password reset token for {Email}: {ResetToken}",
+            fallbackLog: "Prototype password reset code for {Email}: {ResetToken}",
             user.Email,
             token);
     }
@@ -208,6 +211,11 @@ public sealed class GoogleAuthService(IConfiguration configuration) : IGoogleAut
 {
     public async Task<(string Subject, string Email, string FirstName, string LastName)> ValidateAsync(string idToken, CancellationToken cancellationToken)
     {
+        if (string.IsNullOrWhiteSpace(idToken))
+        {
+            throw new InvalidOperationException("Google sign-in did not return an ID token.");
+        }
+
         var clientIds = configuration
             .GetSection("GoogleAuth:ClientIds")
             .GetChildren()
@@ -225,14 +233,15 @@ public sealed class GoogleAuthService(IConfiguration configuration) : IGoogleAut
         {
             var payload = await GoogleJsonWebSignature.ValidateAsync(idToken, new GoogleJsonWebSignature.ValidationSettings
             {
-                Audience = clientIds
+                Audience = clientIds,
+                IssuedAtClockTolerance = TimeSpan.FromMinutes(5),
+                ExpirationTimeClockTolerance = TimeSpan.FromMinutes(2)
             });
 
             return (payload.Subject, payload.Email, payload.GivenName ?? "Google", payload.FamilyName ?? "User");
         }
 
-        var suffix = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(idToken))).ToLowerInvariant()[..8];
-        return ($"prototype-google-{suffix}", $"google.{suffix}@bikemate.test", "Google", "User");
+        throw new InvalidOperationException("Google sign-in is not configured on the API. Set GoogleAuth:AndroidClientId/WebClientId and try again.");
     }
 }
 
@@ -408,13 +417,22 @@ public sealed class AuthService(
             return;
         }
 
-        var token = Convert.ToHexString(RandomNumberGenerator.GetBytes(24)).ToLowerInvariant();
+        var now = DateTime.UtcNow;
+        var openTokens = await db.PasswordResetTokens
+            .Where(x => x.UserId == user.UserId && x.ConsumedAt == null)
+            .ToListAsync(cancellationToken);
+        foreach (var openToken in openTokens)
+        {
+            openToken.ConsumedAt = now;
+        }
+
+        var token = otpService.GenerateCode();
         db.PasswordResetTokens.Add(new PasswordResetToken
         {
             UserId = user.UserId,
             TokenHash = passwordService.HashPassword(token),
-            ExpiresAt = DateTime.UtcNow.AddMinutes(15),
-            CreatedAt = DateTime.UtcNow
+            ExpiresAt = now.AddMinutes(15),
+            CreatedAt = now
         });
         await db.SaveChangesAsync(cancellationToken);
         await emailService.SendPasswordResetAsync(user, token, cancellationToken);
@@ -607,7 +625,10 @@ public sealed class ServiceRequestService(BikeMateDbContext db) : IServiceReques
             x.ScheduledAt,
             x.EstimatedTotal,
             x.FinalTotal,
-            x.CreatedAt);
+            x.CreatedAt,
+            x.ServiceLatitude,
+            x.ServiceLongitude,
+            null);
     }
 }
 
@@ -674,6 +695,207 @@ public sealed class LocationService(BikeMateDbContext db) : ILocationService
     }
 }
 
+public interface IAgoraTokenService
+{
+    EmergencyCallSessionDto CreateEmergencyCallSession(int requestId, int userId, DateTime startedAt);
+}
+
+public sealed class AgoraTokenService(IConfiguration configuration, ILogger<AgoraTokenService> logger) : IAgoraTokenService
+{
+    public EmergencyCallSessionDto CreateEmergencyCallSession(int requestId, int userId, DateTime startedAt)
+    {
+        var appId = configuration["Agora:AppId"];
+        var certificate = configuration["Agora:PrimaryCertificate"] ?? configuration["Agora:AppCertificate"];
+        var channelName = $"bikemate-emergency-{requestId}";
+        var uid = userId <= 0 ? (uint)requestId : (uint)userId;
+        var tokenLifetimeSeconds = GetTokenLifetimeSeconds();
+        var expiresAt = startedAt.AddSeconds(tokenLifetimeSeconds);
+
+        if (!IsAgoraId(appId) || !IsAgoraId(certificate))
+        {
+            logger.LogWarning("Agora emergency call session requested for {RequestId}, but Agora configuration is missing or invalid.", requestId);
+            return new EmergencyCallSessionDto(
+                requestId,
+                "ConfigurationMissing",
+                startedAt,
+                null,
+                "Agora calling is not configured on the API. Set Agora:AppId and Agora:PrimaryCertificate, then retry.",
+                appId,
+                channelName,
+                uid,
+                null,
+                expiresAt);
+        }
+
+        var token = AgoraRtcTokenBuilder.BuildTokenWithUid(
+            appId!,
+            certificate!,
+            channelName,
+            uid,
+            tokenLifetimeSeconds,
+            tokenLifetimeSeconds);
+
+        if (string.IsNullOrWhiteSpace(token))
+        {
+            logger.LogWarning("Agora token generation returned an empty token for emergency request {RequestId}.", requestId);
+            return new EmergencyCallSessionDto(
+                requestId,
+                "TokenUnavailable",
+                startedAt,
+                null,
+                "Agora token generation failed. Check the API Agora App ID and certificate.",
+                appId,
+                channelName,
+                uid,
+                null,
+                expiresAt);
+        }
+
+        return new EmergencyCallSessionDto(
+            requestId,
+            "TokenReady",
+            startedAt,
+            null,
+            "Agora session token is ready. Join the returned channel with the native Agora RTC SDK.",
+            appId,
+            channelName,
+            uid,
+            token,
+            expiresAt);
+    }
+
+    private uint GetTokenLifetimeSeconds()
+    {
+        var configured = configuration.GetValue<int?>("Agora:TokenLifetimeSeconds") ?? 1800;
+        return (uint)Math.Clamp(configured, 60, 86400);
+    }
+
+    private static bool IsAgoraId(string? value)
+    {
+        return !string.IsNullOrWhiteSpace(value) &&
+            value.Length == 32 &&
+            value.All(Uri.IsHexDigit) &&
+            !value.StartsWith("YOUR_", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static class AgoraRtcTokenBuilder
+    {
+        private const ushort ServiceTypeRtc = 1;
+        private const ushort PrivilegeJoinChannel = 1;
+        private const ushort PrivilegePublishAudioStream = 2;
+        private const ushort PrivilegePublishVideoStream = 3;
+        private const ushort PrivilegePublishDataStream = 4;
+
+        public static string BuildTokenWithUid(
+            string appId,
+            string appCertificate,
+            string channelName,
+            uint uid,
+            uint tokenExpireSeconds,
+            uint privilegeExpireSeconds)
+        {
+            var issueTs = (uint)DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+            var salt = (uint)RandomNumberGenerator.GetInt32(1, 99_999_999);
+            var appCertificateBytes = Encoding.UTF8.GetBytes(appCertificate);
+            var signing = Hmac(PackUInt32(issueTs), appCertificateBytes);
+            signing = Hmac(PackUInt32(salt), signing);
+
+            var serviceRtc = PackServiceRtc(channelName, uid, privilegeExpireSeconds);
+            var signingInfo = Concat(
+                PackString(Encoding.UTF8.GetBytes(appId)),
+                PackUInt32(issueTs),
+                PackUInt32(tokenExpireSeconds),
+                PackUInt32(salt),
+                PackUInt16(1),
+                serviceRtc);
+
+            var signature = Hmac(signing, signingInfo);
+            var content = Concat(PackString(signature), signingInfo);
+            return "007" + Convert.ToBase64String(Compress(content));
+        }
+
+        private static byte[] PackServiceRtc(string channelName, uint uid, uint privilegeExpireSeconds)
+        {
+            var privileges = new SortedDictionary<ushort, uint>
+            {
+                [PrivilegeJoinChannel] = privilegeExpireSeconds,
+                [PrivilegePublishAudioStream] = privilegeExpireSeconds,
+                [PrivilegePublishVideoStream] = privilegeExpireSeconds,
+                [PrivilegePublishDataStream] = privilegeExpireSeconds
+            };
+
+            return Concat(
+                PackUInt16(ServiceTypeRtc),
+                PackPrivilegeMap(privileges),
+                PackString(Encoding.UTF8.GetBytes(channelName)),
+                PackString(Encoding.UTF8.GetBytes(uid == 0 ? string.Empty : uid.ToString())));
+        }
+
+        private static byte[] PackPrivilegeMap(SortedDictionary<ushort, uint> privileges)
+        {
+            using var buffer = new MemoryStream();
+            buffer.Write(PackUInt16((ushort)privileges.Count));
+            foreach (var privilege in privileges)
+            {
+                buffer.Write(PackUInt16(privilege.Key));
+                buffer.Write(PackUInt32(privilege.Value));
+            }
+
+            return buffer.ToArray();
+        }
+
+        private static byte[] PackString(byte[] value)
+        {
+            return Concat(PackUInt16((ushort)value.Length), value);
+        }
+
+        private static byte[] PackUInt16(ushort value)
+        {
+            var bytes = new byte[sizeof(ushort)];
+            BinaryPrimitives.WriteUInt16LittleEndian(bytes, value);
+            return bytes;
+        }
+
+        private static byte[] PackUInt32(uint value)
+        {
+            var bytes = new byte[sizeof(uint)];
+            BinaryPrimitives.WriteUInt32LittleEndian(bytes, value);
+            return bytes;
+        }
+
+        private static byte[] Hmac(byte[] key, byte[] value)
+        {
+            using var hmac = new HMACSHA256(key);
+            return hmac.ComputeHash(value);
+        }
+
+        private static byte[] Compress(byte[] value)
+        {
+            using var output = new MemoryStream();
+            using (var zlib = new ZLibStream(output, CompressionLevel.SmallestSize, leaveOpen: true))
+            {
+                zlib.Write(value, 0, value.Length);
+            }
+
+            return output.ToArray();
+        }
+
+        private static byte[] Concat(params byte[][] parts)
+        {
+            var length = parts.Sum(x => x.Length);
+            var output = new byte[length];
+            var offset = 0;
+            foreach (var part in parts)
+            {
+                Buffer.BlockCopy(part, 0, output, offset, part.Length);
+                offset += part.Length;
+            }
+
+            return output;
+        }
+    }
+}
+
 public interface IPayMongoService
 {
     Task<(string SessionId, string CheckoutUrl, string ReferenceNumber)> CreateCheckoutAsync(int requestId, decimal amount, CancellationToken cancellationToken);
@@ -686,17 +908,13 @@ public sealed class PayMongoService(
 {
     public async Task<(string SessionId, string CheckoutUrl, string ReferenceNumber)> CreateCheckoutAsync(int requestId, decimal amount, CancellationToken cancellationToken)
     {
-        var publicKey = configuration["PayMongo:PublicKey"] ?? "YOUR_PAYMONGO_PUBLIC_KEY";
         var secretKey = configuration["PayMongo:SecretKey"];
         var reference = $"BM-{requestId}-{DateTime.UtcNow:yyyyMMddHHmmss}";
         if (string.IsNullOrWhiteSpace(secretKey) ||
             !secretKey.StartsWith("sk_", StringComparison.OrdinalIgnoreCase) ||
             secretKey.StartsWith("YOUR_", StringComparison.OrdinalIgnoreCase))
         {
-            var checkout = publicKey.StartsWith("YOUR_", StringComparison.OrdinalIgnoreCase)
-                ? $"https://checkout.paymongo.com/prototype/{reference}"
-                : $"https://checkout.paymongo.com/pay/{reference}";
-            return ($"cs_{reference.ToLowerInvariant()}", checkout, reference);
+            throw new InvalidOperationException("PayMongo checkout is not configured on the API. Set PayMongo:SecretKey on the server and try again.");
         }
 
         var amountInCentavos = Convert.ToInt32(Math.Round(amount * 100m, MidpointRounding.AwayFromZero));

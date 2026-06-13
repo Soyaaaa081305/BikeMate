@@ -553,16 +553,26 @@ public sealed class EmergencyLiveCallPage : CustomerPageBase, IQueryAttributable
         }
 
         _started = true;
-        await _callService.StartCallAsync(_requestId);
+        _viewModel.IsBusy = true;
+        _viewModel.StatusMessage = "Preparing secure Agora emergency session...";
+        Render();
         try
         {
             var session = await EmergencyService.StartCallAsync(_requestId);
             _viewModel.StatusMessage = session.Message;
+            await _callService.StartCallAsync(session);
+            _viewModel.StatusMessage = "Connected to BikeMate Support. Keep this screen open while help is being coordinated.";
         }
         catch (Exception ex)
         {
-            _viewModel.StatusMessage = $"Call placeholder active locally. API call status failed: {ex.Message}";
+            System.Diagnostics.Debug.WriteLine($"Emergency call join failed: {ex}");
+            _viewModel.StatusMessage = ex.Message;
         }
+        finally
+        {
+            _viewModel.IsBusy = false;
+        }
+
         Render();
     }
 
@@ -649,17 +659,24 @@ public sealed class EmergencyLiveCallPage : CustomerPageBase, IQueryAttributable
                         FontAttributes = FontAttributes.Bold,
                         HorizontalTextAlignment = TextAlignment.Center
                     },
-                    new Label
-                    {
-                        Text = _viewModel.StatusMessage,
-                        TextColor = Color.FromArgb("#DDDDDD"),
+                     new Label
+                     {
+                         Text = _viewModel.StatusMessage,
+                         TextColor = Color.FromArgb("#DDDDDD"),
                         FontSize = 13,
                         HorizontalTextAlignment = TextAlignment.Center,
-                        Margin = new Thickness(22, 0)
-                    }
-                }
-            }
-        });
+                         Margin = new Thickness(22, 0)
+                     },
+                     new ActivityIndicator
+                     {
+                         IsVisible = _viewModel.IsBusy,
+                         IsRunning = _viewModel.IsBusy,
+                         Color = Colors.White,
+                         HorizontalOptions = LayoutOptions.Center
+                     }
+                 }
+             }
+         });
         root.Add(center, 0, 1);
 
         var controls = new HorizontalStackLayout
@@ -672,24 +689,24 @@ public sealed class EmergencyLiveCallPage : CustomerPageBase, IQueryAttributable
         {
             _viewModel.IsCameraEnabled = await _callService.ToggleCameraAsync();
             Render();
-        }));
+        }, !_viewModel.IsBusy));
         controls.Add(CallButton(_viewModel.IsMuted ? "Muted" : "Mic", Colors.White, CustomerUi.Dark, async () =>
         {
             _viewModel.IsMuted = await _callService.ToggleMuteAsync();
             Render();
-        }));
+        }, !_viewModel.IsBusy));
         controls.Add(CallButton(_viewModel.IsSpeakerEnabled ? "Speaker" : "Phone", Colors.White, CustomerUi.Dark, async () =>
         {
             _viewModel.IsSpeakerEnabled = await _callService.ToggleSpeakerAsync();
             Render();
-        }));
+        }, !_viewModel.IsBusy));
         controls.Add(CallButton("End", Color.FromArgb("#FF3B30"), Colors.White, ConfirmLeaveAsync));
         root.Add(controls, 0, 2);
 
         SetScaffold(root, "Home", false);
     }
 
-    private static View CallButton(string text, Color background, Color textColor, Func<Task> action)
+    private static View CallButton(string text, Color background, Color textColor, Func<Task> action, bool isEnabled = true)
     {
         return new Button
         {
@@ -700,6 +717,7 @@ public sealed class EmergencyLiveCallPage : CustomerPageBase, IQueryAttributable
             HeightRequest = 58,
             CornerRadius = 29,
             FontSize = 11,
+            IsEnabled = isEnabled,
             Command = new Command(async () => await action())
         };
     }
@@ -712,7 +730,15 @@ public sealed class EmergencyLiveCallPage : CustomerPageBase, IQueryAttributable
             return;
         }
 
-        await _callService.EndCallAsync(_requestId);
+        try
+        {
+            await _callService.EndCallAsync(_requestId);
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Emergency call local end failed: {ex}");
+        }
+
         try
         {
             await EmergencyService.EndCallAsync(_requestId);
@@ -957,7 +983,18 @@ public sealed class ActiveEmergencyTrackingPage : CustomerPageBase, IQueryAttrib
         {
             if (status is not null)
             {
-                await BookingVisuals.OpenGoogleMapsAsync($"{status.CustomerLatitude.ToString(CultureInfo.InvariantCulture)},{status.CustomerLongitude.ToString(CultureInfo.InvariantCulture)}");
+                if (status.MechanicLatitude is not null && status.MechanicLongitude is not null)
+                {
+                    await BookingVisuals.OpenGoogleDirectionsAsync(
+                        status.MechanicLatitude.Value,
+                        status.MechanicLongitude.Value,
+                        status.CustomerLatitude,
+                        status.CustomerLongitude);
+                }
+                else
+                {
+                    await BookingVisuals.OpenGoogleMapsAsync($"{status.CustomerLatitude.ToString(CultureInfo.InvariantCulture)},{status.CustomerLongitude.ToString(CultureInfo.InvariantCulture)}");
+                }
             }
         })), 1, 0);
         body.Add(actions);
@@ -985,26 +1022,46 @@ public sealed class ActiveEmergencyTrackingPage : CustomerPageBase, IQueryAttrib
             HeightRequest = 260,
             BackgroundColor = Color.FromArgb("#ECEFF3")
         };
+
+        if (status is null)
+        {
+            grid.Add(new Label
+            {
+                Text = "Loading emergency map...",
+                TextColor = CustomerUi.Dark,
+                FontSize = 13,
+                FontFamily = CustomerUi.FontBody,
+                HorizontalTextAlignment = TextAlignment.Center,
+                VerticalTextAlignment = TextAlignment.Center
+            });
+            return Card(grid, Colors.White, 12, new Thickness(0));
+        }
+
+        var hasResponderLocation = status.MechanicLatitude is not null && status.MechanicLongitude is not null;
+        grid.Add(new WebView
+        {
+            Source = hasResponderLocation
+                ? BookingVisuals.GoogleDirectionsSource(
+                    status.MechanicLatitude!.Value,
+                    status.MechanicLongitude!.Value,
+                    status.CustomerLatitude,
+                    status.CustomerLongitude)
+                : BookingVisuals.GoogleMapSource(status.CustomerLatitude, status.CustomerLongitude),
+            HeightRequest = 260
+        });
         grid.Add(new Label
         {
-            Text = status is null
-                ? "Loading emergency map..."
-                : $"Customer\n{status.CustomerLatitude:0.000000}, {status.CustomerLongitude:0.000000}\n\nResponder\n{(status.MechanicLatitude?.ToString("0.000000", CultureInfo.InvariantCulture) ?? "pending")}, {(status.MechanicLongitude?.ToString("0.000000", CultureInfo.InvariantCulture) ?? "pending")}",
-            TextColor = CustomerUi.Dark,
-            FontSize = 13,
+            Text = hasResponderLocation ? "Responder route to you" : "Waiting for responder location",
+            TextColor = hasResponderLocation ? Color.FromArgb("#167A3A") : Color.FromArgb("#503CFF"),
+            BackgroundColor = Color.FromRgba(255, 255, 255, 0.88),
+            FontSize = 12,
+            FontFamily = CustomerUi.FontCaptionBold,
+            Padding = new Thickness(10, 6),
             HorizontalTextAlignment = TextAlignment.Center,
-            VerticalTextAlignment = TextAlignment.Center
-        });
-        grid.Add(new Border
-        {
-            WidthRequest = 24,
-            HeightRequest = 24,
-            StrokeShape = new RoundRectangle { CornerRadius = 12 },
-            BackgroundColor = Color.FromArgb("#FF3B30"),
-            Stroke = Colors.White,
-            StrokeThickness = 3,
+            VerticalTextAlignment = TextAlignment.Center,
             HorizontalOptions = LayoutOptions.Center,
-            VerticalOptions = LayoutOptions.Center
+            VerticalOptions = LayoutOptions.Start,
+            Margin = new Thickness(10)
         });
         return Card(grid, Colors.White, 12, new Thickness(0));
     }

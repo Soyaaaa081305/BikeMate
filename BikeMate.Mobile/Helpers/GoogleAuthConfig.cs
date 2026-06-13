@@ -7,4 +7,5 @@ public static class GoogleAuthConfig
     public const string RedirectScheme = "com.googleusercontent.apps.1049211486363-l99ohnd6i2e4evptm2d4a39lqt0q58l4";
     public const string RedirectPath = "/oauth2redirect";
     public const string RedirectUri = RedirectScheme + ":/oauth2redirect";
+    public const string ApiCallbackUri = "bikemate://auth/google";
 }

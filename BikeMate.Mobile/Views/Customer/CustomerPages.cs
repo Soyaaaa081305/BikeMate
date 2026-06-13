@@ -16,11 +16,26 @@ internal static class CustomerUi
     public static readonly Color Border = Color.FromArgb("#E6E6E6");
     public static readonly Color Page = Color.FromArgb("#F6F6F6");
 
+    public const string FontBody = "PublicSans";
+    public const string FontDisplay = "Inter";
+    public const string FontCaption = "PTSansCaption";
+    public const string FontCaptionBold = "PTSansCaptionBold";
+
     public const string OnlineBikeRepairImage = "https://img.icons8.com/color/96/bicycle.png";
     public const string HomeIcon = "https://img.icons8.com/ios/50/home--v1.png";
     public const string ScheduleIcon = "https://img.icons8.com/ios/50/calendar--v1.png";
     public const string PaymentsIcon = "https://img.icons8.com/ios/50/wallet--v1.png";
     public const string MessagesIcon = "https://img.icons8.com/ios/50/speech-bubble--v1.png";
+
+    public static string FontFor(double size, FontAttributes attributes = FontAttributes.None)
+    {
+        if (size <= 11)
+        {
+            return (attributes & FontAttributes.Bold) != 0 ? FontCaptionBold : FontCaption;
+        }
+
+        return size >= 16 || (attributes & FontAttributes.Bold) != 0 ? FontDisplay : FontBody;
+    }
 }
 
 public abstract class CustomerPageBase : ContentPage
@@ -60,6 +75,7 @@ public abstract class CustomerPageBase : ContentPage
             FontSize = size,
             TextColor = color,
             FontAttributes = attributes,
+            FontFamily = CustomerUi.FontFor(size, attributes),
             LineBreakMode = LineBreakMode.WordWrap
         };
     }
@@ -87,7 +103,8 @@ public abstract class CustomerPageBase : ContentPage
             TextColor = Colors.White,
             CornerRadius = 10,
             HeightRequest = 48,
-            FontAttributes = FontAttributes.Bold
+            FontAttributes = FontAttributes.Bold,
+            FontFamily = CustomerUi.FontDisplay
         };
     }
 
@@ -102,7 +119,8 @@ public abstract class CustomerPageBase : ContentPage
             BorderColor = CustomerUi.Border,
             BorderWidth = 1,
             CornerRadius = 8,
-            HeightRequest = 42
+            HeightRequest = 42,
+            FontFamily = CustomerUi.FontBody
         };
     }
 
@@ -136,6 +154,7 @@ public abstract class CustomerPageBase : ContentPage
         {
             Text = title,
             FontSize = 15,
+            FontFamily = CustomerUi.FontDisplay,
             TextColor = CustomerUi.Dark,
             HorizontalTextAlignment = TextAlignment.Center,
             VerticalTextAlignment = TextAlignment.Center
@@ -143,6 +162,7 @@ public abstract class CustomerPageBase : ContentPage
 
         if (!string.IsNullOrWhiteSpace(right))
         {
+            var rightWidth = right.Length > 5 ? 106 : 76;
             grid.Add(new Button
             {
                 Text = right,
@@ -150,7 +170,9 @@ public abstract class CustomerPageBase : ContentPage
                 BackgroundColor = Colors.Transparent,
                 TextColor = CustomerUi.Orange,
                 FontAttributes = FontAttributes.Bold,
-                WidthRequest = 44
+                WidthRequest = rightWidth,
+                FontSize = 12,
+                FontFamily = CustomerUi.FontDisplay
             }, 2, 0);
         }
 
@@ -430,6 +452,7 @@ public sealed class CustomerHomePage : CustomerPageBase
         cards.Add(HomeShortcut("Scheduled", CustomerUi.ScheduleIcon, new Command(async () => await Shell.Current.GoToAsync("//CustomerSchedulePage"))));
         cards.Add(HomeShortcut("Payments", CustomerUi.PaymentsIcon, new Command(async () => await Shell.Current.GoToAsync("//CustomerPaymentsPage"))));
         cards.Add(HomeShortcut("Messages", CustomerUi.MessagesIcon, new Command(async () => await Shell.Current.GoToAsync("//CustomerMessagesPage"))));
+        cards.Add(HomeShortcut("Alerts", CustomerUi.HomeIcon, new Command(async () => await Shell.Current.GoToAsync(nameof(CustomerNotificationsPage)))));
         cards.Add(HomeShortcut("Help Desk", CustomerUi.HomeIcon, new Command(async () => await Shell.Current.GoToAsync(nameof(CustomerHelpDeskPage)))));
         scroller.Content = cards;
         body.Add(scroller);
@@ -509,6 +532,104 @@ public sealed class CustomerHomePage : CustomerPageBase
             Command = new Command(async () => await Shell.Current.GoToAsync($"{nameof(BookingDetailsPage)}?requestId={request.RequestId}"))
         });
         return border;
+    }
+}
+
+public sealed class CustomerNotificationsPage : CustomerPageBase
+{
+    private IReadOnlyList<NotificationDto> _notifications = [];
+    private string? _banner;
+    private bool _isLoading;
+
+    public CustomerNotificationsPage()
+    {
+        Title = "Notifications";
+        Render("Loading notifications...");
+    }
+
+    protected override async void OnAppearing()
+    {
+        base.OnAppearing();
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        if (_isLoading)
+        {
+            return;
+        }
+
+        _isLoading = true;
+        Render("Refreshing notifications...");
+        try
+        {
+            _notifications = await CustomerApiClient.GetNotificationsAsync();
+            _banner = null;
+        }
+        catch (Exception ex)
+        {
+            _banner = $"Connect the API to load notifications. {ex.Message}";
+        }
+        finally
+        {
+            _isLoading = false;
+            Render(_banner);
+        }
+    }
+
+    private void Render(string? banner = null)
+    {
+        var body = new VerticalStackLayout { Padding = new Thickness(16, 8, 16, 20), Spacing = 12 };
+        body.Add(Header("Notifications"));
+        if (!string.IsNullOrWhiteSpace(banner))
+        {
+            body.Add(Card(Label(banner, 11, CustomerUi.Muted), Colors.White, 8, new Thickness(12)));
+        }
+
+        body.Add(GhostButton(_isLoading ? "Refreshing..." : "Refresh status", new Command(async () => await LoadAsync())));
+
+        if (_notifications.Count == 0 && !_isLoading)
+        {
+            body.Add(Card(Label("No notifications yet. Booking, payment, chat, and emergency alerts will appear here.", 12, CustomerUi.Muted)));
+        }
+        else
+        {
+            foreach (var notification in _notifications.OrderByDescending(x => x.CreatedAt))
+            {
+                body.Add(NotificationRow(notification));
+            }
+        }
+
+        SetScaffold(new ScrollView { Content = body }, "Home", false);
+    }
+
+    private View NotificationRow(NotificationDto notification)
+    {
+        var stack = new VerticalStackLayout { Spacing = 6 };
+        stack.Add(new Label
+        {
+            Text = notification.Title,
+            TextColor = CustomerUi.Dark,
+            FontAttributes = notification.IsRead ? FontAttributes.None : FontAttributes.Bold,
+            FontSize = 14
+        });
+        stack.Add(Label(notification.Message, 12, CustomerUi.Muted));
+        stack.Add(Label($"{FormatStatus(notification.NotificationType ?? "notification")} - {notification.CreatedAt.ToLocalTime():MMM d, h:mm tt}", 10, CustomerUi.Orange));
+
+        var card = Card(stack, notification.IsRead ? Colors.White : Color.FromArgb("#FFF4EF"), 8, new Thickness(14));
+        card.GestureRecognizers.Add(new TapGestureRecognizer
+        {
+            Command = new Command(async () =>
+            {
+                if (!notification.IsRead)
+                {
+                    await CustomerApiClient.MarkNotificationReadAsync(notification.NotificationId);
+                    await LoadAsync();
+                }
+            })
+        });
+        return card;
     }
 }
 
@@ -1321,7 +1442,7 @@ public sealed class CustomerPaymentsPage : CustomerPageBase
             }
         }
 
-        body.Add(OrangeButton("Payment Options", new Command(async () => await Shell.Current.GoToAsync(nameof(PaymentOptionsPage)))));
+        body.Add(OrangeButton("Secure Checkout", new Command(async () => await Shell.Current.GoToAsync(nameof(PaymentOptionsPage)))));
 
         SetScaffold(new ScrollView { Content = body }, "Payments");
     }
@@ -1380,34 +1501,27 @@ public sealed class PaymentOptionsPage : CustomerPageBase
 
     private void Render()
     {
-        var body = new VerticalStackLayout { Spacing = 0, BackgroundColor = CustomerUi.Page };
+        var body = new VerticalStackLayout { Padding = new Thickness(16), Spacing = 14, BackgroundColor = CustomerUi.Page };
         body.Add(Header("Payments"));
-        body.Add(SectionHeader("PREFERRED PAYMENT"));
-        body.Add(OptionRow("Cash on Delivery", "Available"));
-        body.Add(SectionHeader("WALLETS"));
-        body.Add(OptionRow("GCASH", "Ready"));
-        body.Add(OptionRow("PayMaya", "Ready"));
-        body.Add(OptionRow("PayPal", "Link account"));
-        body.Add(OptionRow("Amazon Pay", "Link account"));
-        body.Add(OptionRow("Grab Pay", "Link account"));
-        body.Add(SectionHeader("CREDIT/DEBIT CARDS"));
-        body.Add(OptionRow("5642-XXXXXXXX-0927", "Mastercard"));
-        body.Add(OptionRow("5642-XXXXXXXX-0927", "Visa"));
-        body.Add(OptionRow("ADD NEW CARD", "Saved cards"));
-        body.Add(new VerticalStackLayout
+        body.Add(Card(new VerticalStackLayout
         {
-            Padding = new Thickness(14, 16),
+            Spacing = 8,
             Children =
             {
-                OrangeButton("Continue", new Command(async () =>
-                {
-                    var route = BookingDraft.RequestId > 0
-                        ? $"{nameof(PaymentCheckoutPage)}?requestId={BookingDraft.RequestId}"
-                        : nameof(PaymentCheckoutPage);
-                    await Shell.Current.GoToAsync(route);
-                }))
+                Label("Secure payment", 16, CustomerUi.Dark, FontAttributes.Bold),
+                Label("BikeMate opens PayMongo hosted checkout for card, GCash, PayMaya, and other supported payment methods. Payment status is verified from the backend after you return.", 12, CustomerUi.Muted),
+                Label("No payment keys or card details are stored in the mobile app.", 12, CustomerUi.Muted)
             }
-        });
+        }, Colors.White, 8, new Thickness(14)));
+
+        body.Add(OrangeButton("Continue to secure payment", new Command(async () =>
+        {
+            var route = BookingDraft.RequestId > 0
+                ? $"{nameof(PaymentCheckoutPage)}?requestId={BookingDraft.RequestId}"
+                : nameof(PaymentCheckoutPage);
+            await Shell.Current.GoToAsync(route);
+        })));
+        body.Add(GhostButton("Return home", new Command(async () => await Shell.Current.GoToAsync("//CustomerHomePage"))));
 
         SetScaffold(new ScrollView { Content = body }, "Payments", false);
     }
@@ -1461,6 +1575,8 @@ public sealed class PaymentCheckoutPage : CustomerPageBase, IQueryAttributable
     private PaymentDto? _payment;
     private ServiceRequestDto? _request;
     private bool _fromBookingFlow;
+    private bool _isOpeningCheckout;
+    private bool _returnedFromPaymentSuccess;
 
     public PaymentCheckoutPage()
     {
@@ -1487,6 +1603,30 @@ public sealed class PaymentCheckoutPage : CustomerPageBase, IQueryAttributable
     protected override async void OnAppearing()
     {
         base.OnAppearing();
+        var paymentReturn = PaymentReturnService.ConsumeReturn();
+        if (paymentReturn is not null)
+        {
+            if (paymentReturn.PaymentId > 0)
+            {
+                _paymentId = paymentReturn.PaymentId;
+            }
+
+            if (paymentReturn.RequestId > 0)
+            {
+                _requestId = paymentReturn.RequestId;
+            }
+
+            _fromBookingFlow = _fromBookingFlow || paymentReturn.FromBookingFlow;
+            _returnedFromPaymentSuccess = string.Equals(paymentReturn.Status, "success", StringComparison.OrdinalIgnoreCase);
+            await LoadAsync(PaymentReturnService.FormatBanner(paymentReturn));
+            return;
+        }
+
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync(string? banner = null)
+    {
         try
         {
             var payments = await CustomerApiClient.GetPaymentHistoryAsync();
@@ -1520,11 +1660,12 @@ public sealed class PaymentCheckoutPage : CustomerPageBase, IQueryAttributable
                 _request ??= await CustomerApiClient.GetRequestAsync(_payment.RequestId);
             }
 
-            Render();
+            Render(banner);
         }
         catch (Exception ex)
         {
-            Render($"Connect the API to load payment details. {ex.Message}");
+            var message = $"Connect the API to load payment details. {ex.Message}";
+            Render(string.IsNullOrWhiteSpace(banner) ? message : $"{banner}\n{message}");
         }
     }
 
@@ -1540,7 +1681,8 @@ public sealed class PaymentCheckoutPage : CustomerPageBase, IQueryAttributable
         var location = _request?.ServiceLocationAddress ?? BookingDraft.ConfirmationAddress();
         var schedule = _request?.ScheduledAt?.ToLocalTime() ?? BookingDraft.ScheduledAt;
         var bookingStatus = _request is null ? "pending" : FormatStatus(_request.CurrentStatus);
-        var paymentStatus = _payment is null ? "Unpaid" : FormatStatus(_payment.Status);
+        var isPaid = IsPaidForDisplay();
+        var paymentStatus = isPaid ? "Paid" : _payment is null ? "Unpaid" : FormatStatus(_payment.Status);
 
         var body = new VerticalStackLayout { Spacing = 12 };
         body.Add(new Grid
@@ -1551,7 +1693,7 @@ public sealed class PaymentCheckoutPage : CustomerPageBase, IQueryAttributable
             {
                 new Label
                 {
-                    Text = $"Payment Details\n{bookingStatus} • 1 item to pay: {Money(amount)}",
+                    Text = $"Payment Details\n{paymentStatus} - total: {Money(amount)}",
                     TextColor = Colors.White,
                     HorizontalTextAlignment = TextAlignment.Center,
                     FontAttributes = FontAttributes.Bold,
@@ -1580,34 +1722,93 @@ public sealed class PaymentCheckoutPage : CustomerPageBase, IQueryAttributable
         content.Add(Row("Technician", _request?.MechanicName ?? "Not assigned"));
         content.Add(Row("Booking Status", bookingStatus));
         content.Add(Separator());
-        content.Add(Row("Payment Method", BookingDraft.PaymentMethod));
-        content.Add(Row("Provider", _payment?.ProviderName ?? BookingDraft.PaymentMethod));
+        content.Add(Row("Payment Method", "PayMongo secure checkout"));
+        content.Add(Row("Provider", _payment?.ProviderName ?? "paymongo"));
         content.Add(Row("Reference", _payment?.ReferenceNumber ?? $"BM-PAY-{_paymentId:0000}"));
         content.Add(Row("Payment Status", paymentStatus));
         content.Add(Row("Total", Money(amount)));
-        if (!string.Equals(_payment?.Status, "paid", StringComparison.OrdinalIgnoreCase) &&
-            Uri.TryCreate(_payment?.CheckoutUrl, UriKind.Absolute, out var checkoutUri))
+        if (isPaid)
         {
-            content.Add(OrangeButton("Open PayMongo Checkout", new Command(async () =>
-            {
-                await Launcher.Default.OpenAsync(checkoutUri);
-            })));
+            content.Add(Card(Label(
+                string.Equals(_payment?.Status, "paid", StringComparison.OrdinalIgnoreCase)
+                    ? "Payment confirmed by BikeMate."
+                    : "Payment completed in PayMongo. BikeMate will keep verifying the backend record.",
+                11,
+                CustomerUi.Muted),
+                Colors.White,
+                8,
+                new Thickness(12)));
         }
 
-        content.Add(OrangeButton(_fromBookingFlow ? "Proceed to Booking" : "Continue", new Command(async () =>
+        if (!isPaid &&
+            Uri.TryCreate(_payment?.CheckoutUrl, UriKind.Absolute, out var checkoutUri))
         {
-            if (_fromBookingFlow)
-            {
-                await Shell.Current.GoToAsync(nameof(BookingSearchShopPage));
-            }
-            else
-            {
-                await Shell.Current.GoToAsync($"{nameof(PaymentReceiptPage)}?paymentId={_paymentId}");
-            }
-        })));
+            content.Add(OrangeButton(_isOpeningCheckout ? "Opening secure payment..." : "Continue to secure payment", new Command(async () => await OpenCheckoutAsync(checkoutUri))));
+        }
+
+        content.Add(GhostButton("Refresh payment status", new Command(async () => await LoadAsync())));
+        if (isPaid && _paymentId > 0)
+        {
+            content.Add(GhostButton("View receipt", new Command(async () => await Shell.Current.GoToAsync($"{nameof(PaymentReceiptPage)}?paymentId={_paymentId}"))));
+        }
+
+        content.Add(OrangeButton("Return home", new Command(async () => await Shell.Current.GoToAsync("//CustomerHomePage"))));
         body.Add(content);
 
         SetScaffold(new ScrollView { Content = body }, "Payments", false);
+    }
+
+    private async Task OpenCheckoutAsync(Uri checkoutUri)
+    {
+        if (_isOpeningCheckout)
+        {
+            return;
+        }
+
+        _isOpeningCheckout = true;
+        var openedCheckout = false;
+        Render();
+        try
+        {
+            PaymentReturnService.RememberCheckoutContext(_paymentId, _requestId, _fromBookingFlow);
+
+            if (!await Launcher.Default.CanOpenAsync(checkoutUri))
+            {
+                await DisplayAlertAsync("Payment unavailable", "Android could not open the secure PayMongo checkout link. Enable a browser, then try again.", "OK");
+                return;
+            }
+
+            var opened = await Launcher.Default.OpenAsync(checkoutUri);
+            if (!opened)
+            {
+                await DisplayAlertAsync("Payment unavailable", "Android did not open the PayMongo checkout page. Please try again.", "OK");
+                return;
+            }
+
+            openedCheckout = true;
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"PayMongo checkout open failed: {ex}");
+            await DisplayAlertAsync("Payment unavailable", "Could not open secure PayMongo checkout. Please try again or contact support.", "OK");
+        }
+        finally
+        {
+            _isOpeningCheckout = false;
+            if (openedCheckout)
+            {
+                Render("PayMongo checkout opened. BikeMate will refresh this page when you return.");
+            }
+            else
+            {
+                await LoadAsync();
+            }
+        }
+    }
+
+    private bool IsPaidForDisplay()
+    {
+        return string.Equals(_payment?.Status, "paid", StringComparison.OrdinalIgnoreCase) || _returnedFromPaymentSuccess;
     }
 }
 

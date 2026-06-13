@@ -9,7 +9,9 @@
             Routing.RegisterRoute(nameof(Views.Auth.LoginPage), typeof(Views.Auth.LoginPage));
             Routing.RegisterRoute(nameof(Views.Auth.RegisterPage), typeof(Views.Auth.RegisterPage));
             Routing.RegisterRoute(nameof(Views.Auth.OtpVerificationPage), typeof(Views.Auth.OtpVerificationPage));
+            Routing.RegisterRoute(nameof(Views.Auth.PasswordResetPage), typeof(Views.Auth.PasswordResetPage));
             Routing.RegisterRoute(nameof(Views.Customer.CustomerProfilePage), typeof(Views.Customer.CustomerProfilePage));
+            Routing.RegisterRoute(nameof(Views.Customer.CustomerNotificationsPage), typeof(Views.Customer.CustomerNotificationsPage));
             Routing.RegisterRoute(nameof(Views.Customer.CustomerHelpDeskPage), typeof(Views.Customer.CustomerHelpDeskPage));
             Routing.RegisterRoute(nameof(Views.Customer.CustomerChatPage), typeof(Views.Customer.CustomerChatPage));
             Routing.RegisterRoute(nameof(Views.Customer.BookServicePage), typeof(Views.Customer.BookServicePage));
@@ -36,6 +38,19 @@
             Routing.RegisterRoute(nameof(Views.Customer.Emergency.EmergencyLiveCallPage), typeof(Views.Customer.Emergency.EmergencyLiveCallPage));
             Routing.RegisterRoute(nameof(Views.Customer.Emergency.EmergencyLocationPickerPage), typeof(Views.Customer.Emergency.EmergencyLocationPickerPage));
             Routing.RegisterRoute(nameof(Views.Customer.Emergency.ActiveEmergencyTrackingPage), typeof(Views.Customer.Emergency.ActiveEmergencyTrackingPage));
+            Routing.RegisterRoute(nameof(Views.Mechanic.MechanicJobDetailsPage), typeof(Views.Mechanic.MechanicJobDetailsPage));
+            Routing.RegisterRoute(nameof(Views.Mechanic.MechanicMapPage), typeof(Views.Mechanic.MechanicMapPage));
+            Routing.RegisterRoute(nameof(Views.Mechanic.MechanicEmergencyRequestsPage), typeof(Views.Mechanic.MechanicEmergencyRequestsPage));
+            Routing.RegisterRoute(nameof(Views.Admin.AdminMechanicsVerificationPage), typeof(Views.Admin.AdminMechanicsVerificationPage));
+            Routing.RegisterRoute(nameof(Views.Admin.AdminShopsVerificationPage), typeof(Views.Admin.AdminShopsVerificationPage));
+            Routing.RegisterRoute(nameof(Views.Admin.AdminAuditLogsPage), typeof(Views.Admin.AdminAuditLogsPage));
+            Routing.RegisterRoute(nameof(Views.Admin.AdminEmergencyRequestsPage), typeof(Views.Admin.AdminEmergencyRequestsPage));
+            Routing.RegisterRoute(nameof(Views.Admin.AdminRevenueReportPage), typeof(Views.Admin.AdminRevenueReportPage));
+            Routing.RegisterRoute(nameof(Views.ShopAdmin.ShopServiceEditPage), typeof(Views.ShopAdmin.ShopServiceEditPage));
+            Routing.RegisterRoute(nameof(Views.ShopAdmin.ShopProductEditPage), typeof(Views.ShopAdmin.ShopProductEditPage));
+            Routing.RegisterRoute(nameof(Views.ShopAdmin.ShopMechanicsPage), typeof(Views.ShopAdmin.ShopMechanicsPage));
+            Routing.RegisterRoute(nameof(Views.ShopAdmin.ShopEarningsPage), typeof(Views.ShopAdmin.ShopEarningsPage));
+            Routing.RegisterRoute(nameof(Views.ShopAdmin.ShopSchedulePage), typeof(Views.ShopAdmin.ShopSchedulePage));
         }
     }
 }

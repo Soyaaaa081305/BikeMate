@@ -6,6 +6,8 @@ namespace BikeMate.Helpers;
 
 public static class AppNavigation
 {
+    public const string ForceLoginPreferenceKey = "bikemate_force_login_after_logout";
+
     public static async Task NavigateByRoleAsync(string? role)
     {
         var route = role switch
@@ -47,16 +49,20 @@ public static class AppNavigation
     {
         SecureStorage.Default.Remove("access_token");
         SecureStorage.Default.Remove("primary_role");
+        SecureStorage.Default.Remove("user_id");
+        Preferences.Default.Set(ForceLoginPreferenceKey, true);
+
         await MainThread.InvokeOnMainThreadAsync(async () =>
         {
             await Task.Yield();
+            if (Application.Current?.Windows.Count > 0)
+            {
+                Application.Current.Windows[0].Page = new AppShell();
+            }
+
             if (Shell.Current is not null)
             {
                 await Shell.Current.GoToAsync("//MainPage");
-            }
-            else if (Application.Current?.Windows.Count > 0)
-            {
-                Application.Current.Windows[0].Page = new AppShell();
             }
         });
     }

@@ -25,6 +25,9 @@ public partial class OtpVerificationPage : ContentPage
     private readonly ActivityIndicator _busy = new() { Color = Color.FromArgb(Orange), IsVisible = false, IsRunning = false };
     private string _email = string.Empty;
     private bool _fromRegister;
+    private bool _isBusy;
+    private DateTimeOffset _resendAvailableAt = DateTimeOffset.MinValue;
+    private IDispatcherTimer? _resendTimer;
 
     public string Email
     {
@@ -90,22 +93,24 @@ public partial class OtpVerificationPage : ContentPage
         body.Add(EnvelopeMark());
         body.Add(new Label
         {
-            Text = $"Please Enter the 6 digit code sent to your email.\n[{MaskEmail(_email)}]",
+            Text = $"We sent a verification code to {DisplayEmail(_email)}.",
             TextColor = Color.FromArgb(Muted),
-            FontSize = 11,
+            FontSize = 12,
             HorizontalTextAlignment = TextAlignment.Center
         });
 
         body.Add(OtpBox());
+        var resendSeconds = ResendSecondsRemaining();
         body.Add(new Button
         {
-            Text = "Resend Code",
+            Text = resendSeconds > 0 ? $"Resend Code ({resendSeconds}s)" : "Resend Code",
             BackgroundColor = Colors.Transparent,
-            TextColor = Color.FromArgb("#4F6FD8"),
+            TextColor = resendSeconds > 0 || _isBusy ? Color.FromArgb("#9AA7C7") : Color.FromArgb("#4F6FD8"),
             FontSize = 11,
+            IsEnabled = !_isBusy && resendSeconds == 0,
             Command = new Command(async () => await ResendAsync())
         });
-        body.Add(PrimaryButton("Continue", VerifyAsync));
+        body.Add(PrimaryButton(_isBusy ? "Please wait..." : "Continue", VerifyAsync, !_isBusy));
         body.Add(_busy);
 
         Content = new ScrollView { Content = body };
@@ -157,12 +162,23 @@ public partial class OtpVerificationPage : ContentPage
 
     private async Task ResendAsync()
     {
+        if (ResendSecondsRemaining() > 0)
+        {
+            return;
+        }
+
         await RunOtpRequestAsync("auth/resend-otp", new ResendOtpRequestDto(Email, "email_verification"), false);
     }
 
     private async Task RunOtpRequestAsync<T>(string route, T dto, bool verified)
     {
+        if (_isBusy)
+        {
+            return;
+        }
+
         SetBusy(true);
+        Render();
         try
         {
             using var http = ApiConfig.CreateHttpClient();
@@ -175,7 +191,8 @@ public partial class OtpVerificationPage : ContentPage
 
             if (!verified)
             {
-                await DisplayAlertAsync("Code resent", "Please check your email for the new code.", "OK");
+                StartResendCooldown();
+                await DisplayAlertAsync("Code resent", $"Please check {DisplayEmail(_email)} for the new code.", "OK");
                 return;
             }
 
@@ -192,6 +209,7 @@ public partial class OtpVerificationPage : ContentPage
         finally
         {
             SetBusy(false);
+            Render();
         }
     }
 
@@ -208,8 +226,35 @@ public partial class OtpVerificationPage : ContentPage
 
     private void SetBusy(bool value)
     {
+        _isBusy = value;
         _busy.IsVisible = value;
         _busy.IsRunning = value;
+    }
+
+    private void StartResendCooldown()
+    {
+        _resendAvailableAt = DateTimeOffset.UtcNow.AddSeconds(30);
+        _resendTimer ??= Dispatcher.CreateTimer();
+        _resendTimer.Interval = TimeSpan.FromSeconds(1);
+        _resendTimer.Tick -= OnResendTimerTick;
+        _resendTimer.Tick += OnResendTimerTick;
+        _resendTimer.Start();
+    }
+
+    private void OnResendTimerTick(object? sender, EventArgs e)
+    {
+        if (ResendSecondsRemaining() == 0)
+        {
+            _resendTimer?.Stop();
+        }
+
+        Render();
+    }
+
+    private int ResendSecondsRemaining()
+    {
+        var remaining = _resendAvailableAt - DateTimeOffset.UtcNow;
+        return remaining <= TimeSpan.Zero ? 0 : (int)Math.Ceiling(remaining.TotalSeconds);
     }
 
     private static void Detach(View view)
@@ -231,7 +276,7 @@ public partial class OtpVerificationPage : ContentPage
         }
     }
 
-    private static Button PrimaryButton(string text, Func<Task> action)
+    private static Button PrimaryButton(string text, Func<Task> action, bool isEnabled = true)
     {
         return new Button
         {
@@ -242,19 +287,15 @@ public partial class OtpVerificationPage : ContentPage
             HeightRequest = 46,
             FontSize = 12,
             FontAttributes = FontAttributes.Bold,
+            IsEnabled = isEnabled,
             Command = new Command(async () => await action())
         };
     }
 
-    private static string MaskEmail(string email)
+    private static string DisplayEmail(string email)
     {
-        if (string.IsNullOrWhiteSpace(email) || !email.Contains('@', StringComparison.Ordinal))
-        {
-            return "secret@gmail.com";
-        }
-
-        var pieces = email.Split('@', 2);
-        var prefix = pieces[0].Length <= 2 ? pieces[0] : pieces[0][..2] + "***";
-        return $"{prefix}@{pieces[1]}";
+        return string.IsNullOrWhiteSpace(email)
+            ? "your email address"
+            : email.Trim();
     }
 }

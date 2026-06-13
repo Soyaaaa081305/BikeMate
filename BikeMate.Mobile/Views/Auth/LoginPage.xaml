@@ -35,10 +35,10 @@
                         <Entry x:Name="PasswordEntry" Placeholder="Password" IsPassword="True" TextColor="#1F2933" PlaceholderColor="#919191" />
                     </Border>
 
-                    <Button Text="Sign In" Clicked="OnSignInClicked" BackgroundColor="#FF6B00" TextColor="White" CornerRadius="8" HeightRequest="50" FontAttributes="Bold" />
+                    <Button x:Name="SignInButton" Text="Sign In" Clicked="OnSignInClicked" BackgroundColor="#FF6B00" TextColor="White" CornerRadius="8" HeightRequest="50" FontAttributes="Bold" />
 
                     <Grid ColumnDefinitions="*,*" ColumnSpacing="12">
-                        <Button Text="Google" Clicked="OnGoogleClicked" Grid.Column="0" BackgroundColor="White" TextColor="#1F2933" BorderColor="#E1E1E1" BorderWidth="1" CornerRadius="8" />
+                        <Button x:Name="GoogleButton" Text="Google" Clicked="OnGoogleClicked" Grid.Column="0" BackgroundColor="White" TextColor="#1F2933" BorderColor="#E1E1E1" BorderWidth="1" CornerRadius="8" />
                         <Button Text="Create Account" Clicked="OnCreateAccountClicked" Grid.Column="1" BackgroundColor="#1F2933" TextColor="White" CornerRadius="8" />
                     </Grid>
 

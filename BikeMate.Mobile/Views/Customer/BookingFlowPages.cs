@@ -1,10 +1,10 @@
 using System.Globalization;
+using System.Net;
 using BikeMate.Core.DTOs;
 using BikeMate.Services;
 using Microsoft.Maui.ApplicationModel;
 using Microsoft.Maui.Controls.Shapes;
 using Microsoft.Maui.Devices.Sensors;
-using Microsoft.Maui.Media;
 using Microsoft.Maui.Storage;
 
 namespace BikeMate.Views.Customer;
@@ -137,45 +137,106 @@ internal static class BookingDraft
 
 internal static class BookingVisuals
 {
-    public const string MapImage = "https://staticmap.openstreetmap.de/staticmap.php?center=14.599512,120.984222&zoom=15&size=640x430&markers=14.599512,120.984222,red-pushpin";
-    public const string RouteMapImage = "https://staticmap.openstreetmap.de/staticmap.php?center=14.602000,120.983000&zoom=15&size=640x620&markers=14.599512,120.984222,red-pushpin|14.604200,120.982200,blue-pushpin";
     public const string FallenBikeImage = "https://images.unsplash.com/photo-1517649763962-0c623066013b?auto=format&fit=crop&w=700&q=80";
     public const string RiderImage = "https://images.unsplash.com/photo-1534787238916-9ba6764efd4f?auto=format&fit=crop&w=700&q=80";
     public const string ShopImage = "https://images.unsplash.com/photo-1558981806-ec527fa84c39?auto=format&fit=crop&w=700&q=80";
     public const string MechanicImage = "https://images.unsplash.com/photo-1542046272227-d247df21628a?auto=format&fit=crop&w=500&q=80";
 
+    public static HtmlWebViewSource GoogleMapSource(decimal latitude, decimal longitude)
+    {
+        var latText = latitude.ToString(CultureInfo.InvariantCulture);
+        var lngText = longitude.ToString(CultureInfo.InvariantCulture);
+        var frameUrl = $"https://maps.google.com/maps?q={latText},{lngText}&z=15&output=embed";
+        return GoogleMapFrame(frameUrl);
+    }
+
+    public static HtmlWebViewSource GoogleDirectionsSource(
+        decimal originLatitude,
+        decimal originLongitude,
+        decimal destinationLatitude,
+        decimal destinationLongitude)
+    {
+        var origin = $"{originLatitude.ToString(CultureInfo.InvariantCulture)},{originLongitude.ToString(CultureInfo.InvariantCulture)}";
+        var destination = $"{destinationLatitude.ToString(CultureInfo.InvariantCulture)},{destinationLongitude.ToString(CultureInfo.InvariantCulture)}";
+        var frameUrl = $"https://maps.google.com/maps?saddr={origin}&daddr={destination}&dirflg=d&output=embed";
+        return GoogleMapFrame(frameUrl);
+    }
+
+    private static HtmlWebViewSource GoogleMapFrame(string frameUrl)
+    {
+        var encodedUrl = WebUtility.HtmlEncode(frameUrl);
+
+        return new HtmlWebViewSource
+        {
+            BaseUrl = "https://maps.google.com",
+            Html = $$"""
+<!doctype html>
+<html>
+<head>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <style>
+    html, body, iframe {
+      width: 100%;
+      height: 100%;
+      margin: 0;
+      padding: 0;
+      border: 0;
+      overflow: hidden;
+      background: #eef1f4;
+    }
+  </style>
+</head>
+<body>
+  <iframe src="{{encodedUrl}}" loading="lazy" referrerpolicy="no-referrer-when-downgrade" allowfullscreen></iframe>
+</body>
+</html>
+"""
+        };
+    }
+
     public static View FlowHeader(string title)
     {
         var grid = new Grid
         {
-            Padding = new Thickness(12, 10, 14, 4),
+            BackgroundColor = Colors.White,
+            Padding = new Thickness(14, 14, 14, 10),
             ColumnDefinitions =
             {
                 new ColumnDefinition(GridLength.Auto),
                 new ColumnDefinition(GridLength.Star)
-            }
+            },
+            ColumnSpacing = 10
         };
 
         grid.Add(new Button
         {
-            Text = "Back",
-            BackgroundColor = Colors.Transparent,
+            Text = "<",
+            BackgroundColor = Color.FromArgb("#FFF2EA"),
             TextColor = CustomerUi.Dark,
-            FontSize = 12,
-            WidthRequest = 56,
+            FontSize = 18,
+            WidthRequest = 40,
             HeightRequest = 40,
             CornerRadius = 20,
             Padding = new Thickness(0),
             Command = new Command(async () => await Shell.Current.GoToAsync(".."))
         }, 0, 0);
-        grid.Add(new Label
+
+        var text = new VerticalStackLayout { Spacing = 2 };
+        text.Add(new Label
         {
             Text = title,
-            TextColor = CustomerUi.Orange,
-            FontSize = 24,
+            TextColor = CustomerUi.Dark,
+            FontSize = 20,
             FontAttributes = FontAttributes.Bold,
-            VerticalTextAlignment = TextAlignment.Center
-        }, 1, 0);
+            LineBreakMode = LineBreakMode.TailTruncation
+        });
+        text.Add(new Label
+        {
+            Text = "Book a service",
+            TextColor = CustomerUi.Muted,
+            FontSize = 11
+        });
+        grid.Add(text, 1, 0);
         return grid;
     }
 
@@ -187,6 +248,7 @@ internal static class BookingVisuals
             FontSize = size,
             TextColor = color ?? CustomerUi.Dark,
             FontAttributes = attributes,
+            FontFamily = CustomerUi.FontFor(size, attributes),
             LineBreakMode = LineBreakMode.WordWrap
         };
     }
@@ -199,10 +261,11 @@ internal static class BookingVisuals
             Command = command,
             BackgroundColor = CustomerUi.Orange,
             TextColor = Colors.White,
-            FontSize = 12,
-            CornerRadius = 10,
-            HeightRequest = 46,
-            FontAttributes = FontAttributes.Bold
+            FontSize = 14,
+            CornerRadius = 8,
+            HeightRequest = 48,
+            FontAttributes = FontAttributes.Bold,
+            FontFamily = CustomerUi.FontDisplay
         };
     }
 
@@ -213,8 +276,8 @@ internal static class BookingVisuals
             BackgroundColor = Colors.White,
             Stroke = CustomerUi.Border,
             StrokeThickness = 1,
-            StrokeShape = new RoundRectangle { CornerRadius = radius },
-            Padding = padding ?? new Thickness(12),
+            StrokeShape = new RoundRectangle { CornerRadius = Math.Min(radius, 8) },
+            Padding = padding ?? new Thickness(14),
             Content = content
         };
     }
@@ -235,7 +298,7 @@ internal static class BookingVisuals
         grid.Add(stack, 0, 0);
         grid.Add(Text("v", 11, CustomerUi.Muted), 1, 0);
 
-        var border = WhiteCard(grid, 0, new Thickness(10, 7));
+        var border = WhiteCard(grid, 8, new Thickness(12, 9));
         border.GestureRecognizers.Add(new TapGestureRecognizer { Command = command });
         return border;
     }
@@ -244,13 +307,10 @@ internal static class BookingVisuals
     {
         var latitude = BookingDraft.Latitude ?? 14.599512m;
         var longitude = BookingDraft.Longitude ?? 120.984222m;
-        var latText = latitude.ToString(CultureInfo.InvariantCulture);
-        var lngText = longitude.ToString(CultureInfo.InvariantCulture);
-        var mapUrl = $"https://maps.google.com/maps?q={latText},{lngText}&z=15&output=embed";
         var map = new Grid { HeightRequest = height, BackgroundColor = Color.FromArgb("#EEF1F4") };
         map.Add(new WebView
         {
-            Source = new UrlWebViewSource { Url = mapUrl },
+            Source = GoogleMapSource(latitude, longitude),
             HeightRequest = height
         });
         map.Add(new Label
@@ -263,25 +323,6 @@ internal static class BookingVisuals
             HorizontalOptions = LayoutOptions.Start,
             VerticalOptions = LayoutOptions.Start,
             Margin = new Thickness(10)
-        });
-        map.Add(new Border
-        {
-            WidthRequest = 46,
-            HeightRequest = 46,
-            StrokeShape = new RoundRectangle { CornerRadius = 23 },
-            Stroke = Colors.White,
-            StrokeThickness = 3,
-            BackgroundColor = CustomerUi.Orange,
-            HorizontalOptions = LayoutOptions.Center,
-            VerticalOptions = LayoutOptions.Center,
-            Content = new Label
-            {
-                Text = ">",
-                TextColor = Colors.White,
-                FontSize = 22,
-                HorizontalTextAlignment = TextAlignment.Center,
-                VerticalTextAlignment = TextAlignment.Center
-            }
         });
 
         if (withLocateButton)
@@ -313,14 +354,18 @@ internal static class BookingVisuals
                     try
                     {
                         await LocationAccessPage.ShowAsync();
-                        if (Shell.Current.CurrentPage is BookServicePage bookPage)
+                        if (Shell.Current?.CurrentPage is BookServicePage bookPage)
                         {
                             bookPage.RefreshLocationUi();
                         }
                     }
                     catch (Exception ex)
                     {
-                        await Shell.Current.DisplayAlertAsync("Location", ex.Message, "OK");
+                        var page = Shell.Current?.CurrentPage ?? Application.Current?.Windows.FirstOrDefault()?.Page;
+                        if (page is not null)
+                        {
+                            await page.DisplayAlertAsync("Location", ex.Message, "OK");
+                        }
                     }
                 })
             }, 0, 0);
@@ -430,6 +475,24 @@ internal static class BookingVisuals
         }
 
         await Shell.Current.DisplayAlertAsync("Maps unavailable", "No maps or browser app could open this location.", "OK");
+    }
+
+    public static async Task OpenGoogleDirectionsAsync(
+        decimal originLatitude,
+        decimal originLongitude,
+        decimal destinationLatitude,
+        decimal destinationLongitude)
+    {
+        var origin = $"{originLatitude.ToString(CultureInfo.InvariantCulture)},{originLongitude.ToString(CultureInfo.InvariantCulture)}";
+        var destination = $"{destinationLatitude.ToString(CultureInfo.InvariantCulture)},{destinationLongitude.ToString(CultureInfo.InvariantCulture)}";
+        var url = $"https://www.google.com/maps/dir/?api=1&origin={Uri.EscapeDataString(origin)}&destination={Uri.EscapeDataString(destination)}&travelmode=driving";
+
+        if (await TryOpenUriAsync(new Uri(url)))
+        {
+            return;
+        }
+
+        await OpenGoogleMapsAsync(destination);
     }
 
     private static async Task<bool> TryOpenUriAsync(Uri uri)
@@ -616,11 +679,22 @@ internal sealed class BookingOptionSheet : ContentPage
 internal sealed class LocationAccessPage : ContentPage
 {
     private readonly TaskCompletionSource<bool> _closed = new();
+    private bool _isBusy;
 
     private LocationAccessPage()
     {
         Shell.SetNavBarIsVisible(this, false);
         BackgroundColor = Colors.White;
+
+        var accessButton = BookingVisuals.PrimaryButton("ACCESS LOCATION", new Command(async () => await AccessLocationAsync()));
+        var cancelButton = new Button
+        {
+            Text = "Not now",
+            BackgroundColor = Colors.Transparent,
+            TextColor = CustomerUi.Muted,
+            HeightRequest = 42,
+            Command = new Command(async () => await CloseAsync())
+        };
 
         var card = new VerticalStackLayout
         {
@@ -636,12 +710,8 @@ internal sealed class LocationAccessPage : ContentPage
                     HeightRequest = 142,
                     WidthRequest = 142
                 },
-                BookingVisuals.PrimaryButton("ACCESS LOCATION", new Command(async () =>
-                {
-                    await BookingVisuals.UpdateCurrentLocationAsync(this);
-                    _closed.TrySetResult(true);
-                    await Navigation.PopModalAsync();
-                })),
+                accessButton,
+                cancelButton,
                 BookingVisuals.Text("TURN ON OR WILL ONLY USE YOUR APP\nWHEN USING THIS APP", 9, CustomerUi.Muted)
             }
         };
@@ -649,10 +719,49 @@ internal sealed class LocationAccessPage : ContentPage
         Content = card;
     }
 
+    protected override void OnDisappearing()
+    {
+        base.OnDisappearing();
+        _closed.TrySetResult(true);
+    }
+
+    private async Task AccessLocationAsync()
+    {
+        if (_isBusy)
+        {
+            return;
+        }
+
+        _isBusy = true;
+        try
+        {
+            await BookingVisuals.UpdateCurrentLocationAsync(this);
+            await CloseAsync();
+        }
+        catch (Exception ex)
+        {
+            await DisplayAlertAsync("Location unavailable", ex.Message, "OK");
+        }
+        finally
+        {
+            _isBusy = false;
+        }
+    }
+
+    private async Task CloseAsync()
+    {
+        _closed.TrySetResult(true);
+        if (Navigation.ModalStack.Contains(this))
+        {
+            await Navigation.PopModalAsync();
+        }
+    }
+
     public static async Task ShowAsync()
     {
+        var shell = Shell.Current ?? throw new InvalidOperationException("BikeMate navigation is not ready yet.");
         var page = new LocationAccessPage();
-        await Shell.Current.Navigation.PushModalAsync(page);
+        await shell.Navigation.PushModalAsync(page);
         await page._closed.Task;
     }
 }
@@ -1067,25 +1176,11 @@ public sealed class BookingUploadPage : CustomerPageBase
 
     private static async Task<FileResult?> PickMediaAsync(string mediaType)
     {
-        try
+        return await FilePicker.Default.PickAsync(new PickOptions
         {
-            if (mediaType == "image")
-            {
-                var photos = await MediaPicker.Default.PickPhotosAsync(new MediaPickerOptions { Title = "Select issue picture" });
-                return photos?.FirstOrDefault();
-            }
-
-            var videos = await MediaPicker.Default.PickVideosAsync(new MediaPickerOptions { Title = "Select issue video" });
-            return videos?.FirstOrDefault();
-        }
-        catch (FeatureNotSupportedException)
-        {
-            return await FilePicker.Default.PickAsync(new PickOptions
-            {
-                PickerTitle = mediaType == "image" ? "Select issue picture" : "Select issue video",
-                FileTypes = mediaType == "image" ? FilePickerFileType.Images : FilePickerFileType.Videos
-            });
-        }
+            PickerTitle = mediaType == "image" ? "Select issue picture" : "Select issue video",
+            FileTypes = mediaType == "image" ? FilePickerFileType.Images : FilePickerFileType.Videos
+        });
     }
 
     private static async Task<string> CopyPickedFileToCacheAsync(FileResult result, string mediaType)
@@ -1686,20 +1781,23 @@ public sealed class BookingTrackMapPage : CustomerPageBase
                 new RowDefinition(GridLength.Auto)
             }
         };
-        root.Add(Header("Track Order"), 0, 0);
+        root.Add(Header("Track Order", true, "Return home", new Command(async () => await Shell.Current.GoToAsync("//CustomerHomePage"))), 0, 0);
         var map = new Grid { BackgroundColor = Color.FromArgb("#EEF1F4") };
         var riderLat = _location?.Latitude ?? BookingDraft.Latitude ?? 14.599512m;
         var riderLng = _location?.Longitude ?? BookingDraft.Longitude ?? 120.984222m;
+        var destinationLat = _request?.ServiceLatitude ?? BookingDraft.Latitude;
+        var destinationLng = _request?.ServiceLongitude ?? BookingDraft.Longitude;
+        var route = BuildRouteSummary(riderLat, riderLng, destinationLat, destinationLng, _location is not null);
+        var mapSource = _location is not null && destinationLat is not null && destinationLng is not null
+            ? BookingVisuals.GoogleDirectionsSource(riderLat, riderLng, destinationLat.Value, destinationLng.Value)
+            : BookingVisuals.GoogleMapSource(riderLat, riderLng);
         map.Add(new WebView
         {
-            Source = new UrlWebViewSource
-            {
-                Url = $"https://maps.google.com/maps?q={riderLat.ToString(CultureInfo.InvariantCulture)},{riderLng.ToString(CultureInfo.InvariantCulture)}&z=15&output=embed"
-            }
+            Source = mapSource
         });
         map.Add(new Label
         {
-            Text = _location is null ? "Waiting for rider live location" : "Rider live location",
+            Text = _location is null ? "Waiting for rider live location" : "Rider to service location",
             TextColor = Color.FromArgb("#503CFF"),
             BackgroundColor = Color.FromRgba(255, 255, 255, 0.86),
             FontSize = 12,
@@ -1717,7 +1815,8 @@ public sealed class BookingTrackMapPage : CustomerPageBase
         {
             card.Add(BookingVisuals.WhiteCard(BookingVisuals.Text(banner, 11, CustomerUi.Muted)));
         }
-        card.Add(BookingVisuals.WhiteCard(new Grid
+
+        var riderRow = new Grid
         {
             ColumnDefinitions =
             {
@@ -1725,26 +1824,55 @@ public sealed class BookingTrackMapPage : CustomerPageBase
                 new ColumnDefinition(GridLength.Star),
                 new ColumnDefinition(GridLength.Auto)
             },
-            Children =
+            ColumnSpacing = 10
+        };
+        riderRow.Add(Avatar("R", 42, CustomerUi.LightOrange), 0, 0);
+        var riderText = new VerticalStackLayout { Spacing = 2 };
+        riderText.Add(BookingVisuals.Text(_request?.MechanicName ?? "Assigned rider", 13, CustomerUi.Dark, FontAttributes.Bold));
+        riderText.Add(BookingVisuals.Text(_location is null ? "Location not shared yet" : "Live location active", 10, _location is null ? CustomerUi.Muted : CustomerUi.Orange));
+        riderRow.Add(riderText, 1, 0);
+        riderRow.Add(new Border
+        {
+            BackgroundColor = _location is null ? Color.FromArgb("#F2F2F2") : Color.FromArgb("#EAF8EF"),
+            Stroke = Colors.Transparent,
+            StrokeShape = new RoundRectangle { CornerRadius = 12 },
+            Padding = new Thickness(10, 5),
+            Content = new Label
             {
-                Avatar("R", 42, CustomerUi.LightOrange),
-                new VerticalStackLayout
-                {
-                    Margin = new Thickness(8, 0, 0, 0),
-                    Spacing = 2,
-                    Children =
-                    {
-                        BookingVisuals.Text(_request?.MechanicName ?? "Girao Sinday", 11, CustomerUi.Dark, FontAttributes.Bold),
-                        BookingVisuals.Text("4.9 stars", 10, CustomerUi.Orange)
-                    }
-                },
-                new Label { Text = "Chat", FontSize = 11, TextColor = CustomerUi.Orange, HorizontalTextAlignment = TextAlignment.End }
+                Text = _location is null ? "Waiting" : "On map",
+                FontSize = 10,
+                TextColor = _location is null ? CustomerUi.Muted : Color.FromArgb("#167A3A"),
+                FontAttributes = FontAttributes.Bold
             }
-        }, 8, new Thickness(10)));
-        card.Add(BookingVisuals.Text("1969 Amil Compound", 11, CustomerUi.Dark));
-        card.Add(BookingVisuals.Text(_request?.ServiceLocationAddress ?? BookingDraft.AddressLine, 11, CustomerUi.Orange));
-        card.Add(BookingVisuals.Text($"DISTANCE   {(_location is null ? "0.2 km" : "0.2 km")}      TIME   2 min", 9, CustomerUi.Muted));
-        card.Add(BookingVisuals.PrimaryButton("Continue", new Command(async () => await Shell.Current.GoToAsync(nameof(TrackOrderPage)))));
+        }, 2, 0);
+        card.Add(riderRow);
+
+        card.Add(RouteLine("From", route.Origin));
+        card.Add(RouteLine("To", route.Destination));
+
+        var stats = new Grid { ColumnSpacing = 8 };
+        stats.ColumnDefinitions.Add(new ColumnDefinition(GridLength.Star));
+        stats.ColumnDefinitions.Add(new ColumnDefinition(GridLength.Star));
+        stats.Add(RouteStat("Distance", route.Distance), 0, 0);
+        stats.Add(RouteStat("ETA", route.Time), 1, 0);
+        card.Add(stats);
+
+        var buttons = new Grid { ColumnSpacing = 8 };
+        buttons.ColumnDefinitions.Add(new ColumnDefinition(GridLength.Star));
+        buttons.ColumnDefinitions.Add(new ColumnDefinition(GridLength.Star));
+        buttons.Add(BookingVisuals.PrimaryButton("View order status", new Command(async () => await Shell.Current.GoToAsync(nameof(TrackOrderPage)))), 0, 0);
+        buttons.Add(new Button
+        {
+            Text = "Return home",
+            BackgroundColor = Colors.White,
+            TextColor = CustomerUi.Dark,
+            BorderColor = CustomerUi.Border,
+            BorderWidth = 1,
+            CornerRadius = 8,
+            HeightRequest = 48,
+            Command = new Command(async () => await Shell.Current.GoToAsync("//CustomerHomePage"))
+        }, 1, 0);
+        card.Add(buttons);
         root.Add(new Border
         {
             BackgroundColor = Colors.White,
@@ -1756,6 +1884,76 @@ public sealed class BookingTrackMapPage : CustomerPageBase
         }, 0, 2);
 
         SetScaffold(root, "Schedule", false);
+    }
+
+    private (string Origin, string Destination, string Distance, string Time) BuildRouteSummary(
+        decimal riderLatitude,
+        decimal riderLongitude,
+        decimal? destinationLatitude,
+        decimal? destinationLongitude,
+        bool hasRiderLocation)
+    {
+        var destination = _request?.ServiceLocationAddress ?? BookingDraft.AddressLine;
+        if (string.IsNullOrWhiteSpace(destination))
+        {
+            destination = "Service location";
+        }
+
+        if (!hasRiderLocation || destinationLatitude is null || destinationLongitude is null)
+        {
+            return ("Rider live location", destination, "--", "--");
+        }
+
+        var km = DistanceKm(riderLatitude, riderLongitude, destinationLatitude.Value, destinationLongitude.Value);
+        var minutes = Math.Max(1, (int)Math.Ceiling((double)km / 18d * 60d));
+        return ("Rider live location", destination, $"{km:0.##} km", $"{minutes} min");
+    }
+
+    private static View RouteLine(string label, string value)
+    {
+        var stack = new VerticalStackLayout { Spacing = 2 };
+        stack.Add(BookingVisuals.Text(label.ToUpperInvariant(), 9, CustomerUi.Muted, FontAttributes.Bold));
+        stack.Add(BookingVisuals.Text(value, 12, CustomerUi.Dark));
+        return stack;
+    }
+
+    private static View RouteStat(string label, string value)
+    {
+        return new Border
+        {
+            BackgroundColor = Color.FromArgb("#F7F7F7"),
+            Stroke = CustomerUi.Border,
+            StrokeShape = new RoundRectangle { CornerRadius = 8 },
+            Padding = new Thickness(12, 8),
+            Content = new VerticalStackLayout
+            {
+                Spacing = 2,
+                Children =
+                {
+                    BookingVisuals.Text(label.ToUpperInvariant(), 9, CustomerUi.Muted, FontAttributes.Bold),
+                    BookingVisuals.Text(value, 15, CustomerUi.Dark, FontAttributes.Bold)
+                }
+            }
+        };
+    }
+
+    private static decimal DistanceKm(decimal latitudeA, decimal longitudeA, decimal latitudeB, decimal longitudeB)
+    {
+        const double earthRadiusKm = 6371d;
+        var lat1 = ToRadians((double)latitudeA);
+        var lat2 = ToRadians((double)latitudeB);
+        var deltaLat = ToRadians((double)(latitudeB - latitudeA));
+        var deltaLng = ToRadians((double)(longitudeB - longitudeA));
+        var a = Math.Sin(deltaLat / 2) * Math.Sin(deltaLat / 2) +
+                Math.Cos(lat1) * Math.Cos(lat2) *
+                Math.Sin(deltaLng / 2) * Math.Sin(deltaLng / 2);
+        var c = 2 * Math.Atan2(Math.Sqrt(a), Math.Sqrt(1 - a));
+        return Math.Round((decimal)(earthRadiusKm * c), 2);
+    }
+
+    private static double ToRadians(double degrees)
+    {
+        return degrees * Math.PI / 180d;
     }
 }
 
@@ -1809,7 +2007,7 @@ public sealed class TrackOrderPage : CustomerPageBase
         var shopName = request?.ShopName ?? "Waiting for repair shop";
 
         var body = new VerticalStackLayout { Padding = new Thickness(14, 6, 14, 16), Spacing = 12 };
-        body.Add(Header("Track Order"));
+        body.Add(Header("Track Order", true, "Return home", new Command(async () => await Shell.Current.GoToAsync("//CustomerHomePage"))));
         if (!string.IsNullOrWhiteSpace(banner))
         {
             body.Add(BookingVisuals.WhiteCard(BookingVisuals.Text(banner, 11, CustomerUi.Muted)));
