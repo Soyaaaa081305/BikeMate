@@ -29,11 +29,13 @@ builder.Services.AddCors(options =>
 {
     options.AddPolicy("MobileApp", policy =>
     {
+        var allowedOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>()
+            ?? ["https://localhost:5001", "https://10.0.2.2:5001"];
         policy
             .AllowAnyHeader()
             .AllowAnyMethod()
             .AllowCredentials()
-            .SetIsOriginAllowed(_ => true);
+            .WithOrigins(allowedOrigins);
     });
 });
 
@@ -43,7 +45,8 @@ var connectionString = builder.Configuration.GetConnectionString("DefaultConnect
 builder.Services.AddDbContext<BikeMateDbContext>(options =>
     options.UseSqlServer(connectionString));
 
-var jwtKey = builder.Configuration["Jwt:Key"] ?? "CHANGE_THIS_TO_A_LONG_SECRET_KEY_CHANGE_ME";
+var jwtKey = builder.Configuration["Jwt:Key"]
+    ?? throw new InvalidOperationException("FATAL: Jwt:Key is not configured. Set it in appsettings or environment variables.");
 var jwtIssuer = builder.Configuration["Jwt:Issuer"] ?? "BikeMate";
 var jwtAudience = builder.Configuration["Jwt:Audience"] ?? "BikeMateMobile";
 
@@ -102,10 +105,10 @@ app.UseAuthentication();
 app.UseAuthorization();
 
 app.MapControllers();
-app.MapHub<BookingHub>("/hubs/booking");
-app.MapHub<ChatHub>("/hubs/chat");
-app.MapHub<EmergencyHub>("/hubs/emergency");
-app.MapHub<LocationHub>("/hubs/location");
-app.MapHub<NotificationHub>("/hubs/notification");
+app.MapHub<BookingHub>("/hubs/booking").RequireAuthorization();
+app.MapHub<ChatHub>("/hubs/chat").RequireAuthorization();
+app.MapHub<EmergencyHub>("/hubs/emergency").RequireAuthorization();
+app.MapHub<LocationHub>("/hubs/location").RequireAuthorization();
+app.MapHub<NotificationHub>("/hubs/notification").RequireAuthorization();
 
 app.Run();

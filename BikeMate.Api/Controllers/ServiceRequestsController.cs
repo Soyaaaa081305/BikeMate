@@ -66,9 +66,22 @@ public sealed class ServiceRequestsController(
     }
 
     [HttpPut("{id:int}/status")]
+    [Authorize(Roles = $"{AppRoles.Mechanic},{AppRoles.ShopAdmin},{AppRoles.SystemAdmin}")]
     public async Task<ActionResult<ServiceRequestDto>> UpdateStatus(int id, UpdateRequestStatusDto dto, CancellationToken cancellationToken)
     {
-        var request = await serviceRequestService.UpdateStatusAsync(id, dto.Status, User.GetUserId(), dto.Notes, cancellationToken);
+        var userId = User.GetUserId();
+
+        if (!User.IsInRole(AppRoles.SystemAdmin) && !User.IsInRole(AppRoles.ShopAdmin))
+        {
+            var isAssignedMechanic = await db.ServiceRequests
+                .AnyAsync(x => x.RequestId == id && x.Mechanic != null && x.Mechanic.UserId == userId, cancellationToken);
+            if (!isAssignedMechanic)
+            {
+                return Forbid();
+            }
+        }
+
+        var request = await serviceRequestService.UpdateStatusAsync(id, dto.Status, userId, dto.Notes, cancellationToken);
         await bookingHub.Clients.Group(BookingHub.GetRequestGroup(id)).SendAsync("ServiceStatusChanged", request, cancellationToken);
         await bookingHub.Clients.Group("admin-monitoring").SendAsync("ServiceStatusChanged", request, cancellationToken);
         return Ok(request);

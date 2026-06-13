@@ -29,7 +29,8 @@ public sealed class JwtService(IConfiguration configuration) : IJwtService
 {
     public string GenerateToken(User user, IReadOnlyCollection<string> roles, DateTimeOffset expiresAt)
     {
-        var key = configuration["Jwt:Key"] ?? "CHANGE_THIS_TO_A_LONG_SECRET_KEY_CHANGE_ME";
+        var key = configuration["Jwt:Key"]
+            ?? throw new InvalidOperationException("Jwt:Key is not configured.");
         var issuer = configuration["Jwt:Issuer"] ?? "BikeMate";
         var audience = configuration["Jwt:Audience"] ?? "BikeMateMobile";
         var claims = new List<Claim>
