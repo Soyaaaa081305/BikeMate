@@ -30,10 +30,19 @@ public sealed class CustomersController(BikeMateDbContext db) : ControllerBase
             customer.ClientId,
             customer.UserId,
             customer.User!.FirstName,
+            customer.MiddleName,
             customer.User.LastName,
             customer.User.Email,
             customer.User.PhoneNumber,
             customer.User.ProfileImageUrl,
+            customer.User.EmailVerified,
+            customer.User.PhoneVerified,
+            customer.User.AccountStatus,
+            customer.User.CreatedAt,
+            customer.User.UpdatedAt,
+            customer.Sex,
+            customer.Birthdate,
+            customer.ValidIdImageUrl,
             Addresses = customer.Addresses.Select(ToAddressDto),
             Motorcycles = customer.Motorcycles.Select(ToMotorcycleDto)
         });
@@ -42,21 +51,80 @@ public sealed class CustomersController(BikeMateDbContext db) : ControllerBase
     [HttpPut("me")]
     public async Task<IActionResult> UpdateMe(UpsertCustomerProfileDto dto, CancellationToken cancellationToken)
     {
-        var user = await db.Users.SingleAsync(x => x.UserId == User.GetUserId(), cancellationToken);
-        var email = dto.Email.Trim().ToLowerInvariant();
+        var userId = User.GetUserId();
+        var customer = await db.Clients.Include(x => x.User).SingleAsync(x => x.UserId == userId, cancellationToken);
+        var user = customer.User!;
+        var email = AuthService.NormalizeEmail(dto.Email);
+        var phone = AuthService.NormalizePhilippineMobile(dto.PhoneNumber);
+
         if (!string.Equals(user.Email, email, StringComparison.OrdinalIgnoreCase) &&
             await db.Users.AnyAsync(x => x.Email == email, cancellationToken))
         {
             throw new InvalidOperationException("Email is already registered.");
         }
 
+        if (!string.IsNullOrWhiteSpace(phone) &&
+            !string.Equals(user.PhoneNumber, phone, StringComparison.OrdinalIgnoreCase) &&
+            await db.Users.AnyAsync(x => x.PhoneNumber == phone, cancellationToken))
+        {
+            throw new InvalidOperationException("Phone number is already registered.");
+        }
+
+        if (string.IsNullOrWhiteSpace(dto.FirstName) || string.IsNullOrWhiteSpace(dto.LastName))
+        {
+            throw new InvalidOperationException("First name and last name are required.");
+        }
+
         user.FirstName = dto.FirstName.Trim();
         user.LastName = dto.LastName.Trim();
         user.Email = email;
-        user.PhoneNumber = dto.PhoneNumber;
+        user.PhoneNumber = phone;
         user.UpdatedAt = DateTime.UtcNow;
+
+        customer.MiddleName = Clean(dto.MiddleName);
+        customer.Sex = Clean(dto.Sex);
+        customer.Birthdate = dto.Birthdate?.Date;
+
         await db.SaveChangesAsync(cancellationToken);
         return Ok(new { message = "Profile updated." });
+    }
+
+    [HttpPut("me/profile-image")]
+    public async Task<IActionResult> UpdateProfileImage(UploadMediaDto dto, CancellationToken cancellationToken)
+    {
+        var user = await db.Users.SingleAsync(x => x.UserId == User.GetUserId(), cancellationToken);
+        user.ProfileImageUrl = RequireMediaUrl(dto.MediaUrl, "Profile photo");
+        user.UpdatedAt = DateTime.UtcNow;
+        await db.SaveChangesAsync(cancellationToken);
+        return Ok(new { message = "Profile photo updated." });
+    }
+
+    [HttpPut("me/valid-id")]
+    public async Task<IActionResult> UpdateValidId(UploadMediaDto dto, CancellationToken cancellationToken)
+    {
+        var customer = await db.Clients.SingleAsync(x => x.UserId == User.GetUserId(), cancellationToken);
+        customer.ValidIdImageUrl = RequireMediaUrl(dto.MediaUrl, "Valid ID");
+        await db.SaveChangesAsync(cancellationToken);
+        return Ok(new { message = "Valid ID updated." });
+    }
+
+    [HttpDelete("me")]
+    public async Task<IActionResult> DeleteMe(CancellationToken cancellationToken)
+    {
+        var user = await db.Users
+            .Include(x => x.DeviceTokens)
+            .SingleAsync(x => x.UserId == User.GetUserId(), cancellationToken);
+
+        user.AccountStatus = "deleted";
+        user.UpdatedAt = DateTime.UtcNow;
+        foreach (var token in user.DeviceTokens)
+        {
+            token.IsActive = false;
+            token.UpdatedAt = DateTime.UtcNow;
+        }
+
+        await db.SaveChangesAsync(cancellationToken);
+        return NoContent();
     }
 
     [HttpGet("dashboard")]
@@ -198,11 +266,12 @@ public sealed class CustomersController(BikeMateDbContext db) : ControllerBase
         var address = new ClientAddress
         {
             ClientId = clientId,
-            Label = dto.Label,
-            AddressLine = dto.AddressLine,
-            City = dto.City,
-            Province = dto.Province,
-            PostalCode = dto.PostalCode,
+            Label = Clean(dto.Label) ?? "Home",
+            AddressLine = Required(dto.AddressLine, "Address"),
+            Barangay = Clean(dto.Barangay),
+            City = Clean(dto.City),
+            Province = Clean(dto.Province),
+            PostalCode = Clean(dto.PostalCode),
             Latitude = dto.Latitude,
             Longitude = dto.Longitude,
             IsDefault = dto.IsDefault,
@@ -225,11 +294,12 @@ public sealed class CustomersController(BikeMateDbContext db) : ControllerBase
                 .ExecuteUpdateAsync(x => x.SetProperty(a => a.IsDefault, false), cancellationToken);
         }
 
-        address.Label = dto.Label;
-        address.AddressLine = dto.AddressLine;
-        address.City = dto.City;
-        address.Province = dto.Province;
-        address.PostalCode = dto.PostalCode;
+        address.Label = Clean(dto.Label) ?? "Home";
+        address.AddressLine = Required(dto.AddressLine, "Address");
+        address.Barangay = Clean(dto.Barangay);
+        address.City = Clean(dto.City);
+        address.Province = Clean(dto.Province);
+        address.PostalCode = Clean(dto.PostalCode);
         address.Latitude = dto.Latitude;
         address.Longitude = dto.Longitude;
         address.IsDefault = dto.IsDefault;
@@ -298,11 +368,30 @@ public sealed class CustomersController(BikeMateDbContext db) : ControllerBase
 
     private static CustomerAddressDto ToAddressDto(ClientAddress x)
     {
-        return new CustomerAddressDto(x.AddressId, x.Label, x.AddressLine, x.City, x.Province, x.Latitude, x.Longitude, x.IsDefault);
+        return new CustomerAddressDto(x.AddressId, x.Label, x.AddressLine, x.Barangay, x.City, x.Province, x.PostalCode, x.Latitude, x.Longitude, x.IsDefault);
     }
 
     private static MotorcycleDto ToMotorcycleDto(Motorcycle x)
     {
-        return new MotorcycleDto(x.MotorcycleId, x.Brand, x.Model, x.YearModel, x.PlateNumber, x.EngineType, x.Color);
+        return new MotorcycleDto(x.MotorcycleId, x.Brand, x.Model, x.YearModel, x.PlateNumber, x.EngineType, x.Color, x.MotorcycleImageUrl);
+    }
+
+    private static string? Clean(string? value)
+    {
+        return string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+    }
+
+    private static string Required(string? value, string label)
+    {
+        return string.IsNullOrWhiteSpace(value)
+            ? throw new InvalidOperationException($"{label} is required.")
+            : value.Trim();
+    }
+
+    private static string RequireMediaUrl(string? value, string label)
+    {
+        return string.IsNullOrWhiteSpace(value)
+            ? throw new InvalidOperationException($"{label} file is required.")
+            : value.Trim();
     }
 }

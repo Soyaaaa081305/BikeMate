@@ -12,8 +12,10 @@ public sealed record CustomerAddressDto(
     int AddressId,
     string? Label,
     string AddressLine,
+    string? Barangay,
     string? City,
     string? Province,
+    string? PostalCode,
     decimal? Latitude,
     decimal? Longitude,
     bool IsDefault);
@@ -21,6 +23,7 @@ public sealed record CustomerAddressDto(
 public sealed record UpsertCustomerAddressDto(
     string? Label,
     string AddressLine,
+    string? Barangay,
     string? City,
     string? Province,
     string? PostalCode,
@@ -32,7 +35,10 @@ public sealed record UpsertCustomerProfileDto(
     string FirstName,
     string LastName,
     string Email,
-    string? PhoneNumber);
+    string? PhoneNumber,
+    string? MiddleName = null,
+    string? Sex = null,
+    DateTime? Birthdate = null);
 
 public sealed record MotorcycleDto(
     int MotorcycleId,
@@ -41,7 +47,8 @@ public sealed record MotorcycleDto(
     int? YearModel,
     string? PlateNumber,
     string? EngineType,
-    string? Color);
+    string? Color,
+    string? MotorcycleImageUrl);
 
 public sealed record UpsertMotorcycleDto(
     string Brand,

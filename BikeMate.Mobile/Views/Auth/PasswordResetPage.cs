@@ -168,7 +168,7 @@ public sealed class PasswordResetPage : CustomerPageBase, IQueryAttributable
 
         var stack = new VerticalStackLayout { Spacing = 12 };
         stack.Add(Label("Create your new password", 14, CustomerUi.Dark, FontAttributes.Bold));
-        stack.Add(Label("Use at least 8 characters. Mix letters, numbers, and symbols when you can.", 11, CustomerUi.Muted));
+        stack.Add(Label("Use more than 8 characters. Mix letters, numbers, and symbols when you can.", 11, CustomerUi.Muted));
         stack.Add(Card(password, Colors.White, 8, new Thickness(12, 2)));
         stack.Add(Card(confirm, Colors.White, 8, new Thickness(12, 2)));
         stack.Add(OrangeButton(_isBusy ? "Updating password..." : "Update password", new Command(async () => await ResetPasswordAsync())));
@@ -320,9 +320,9 @@ public sealed class PasswordResetPage : CustomerPageBase, IQueryAttributable
             return;
         }
 
-        if (_newPassword.Length < 8)
+        if (_newPassword.Length <= 8)
         {
-            _banner = "Use at least 8 characters for the new password.";
+            _banner = "Use more than 8 characters for the new password.";
             Render();
             return;
         }

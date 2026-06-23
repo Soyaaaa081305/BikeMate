@@ -2,9 +2,11 @@ using BikeMate.Api.Helpers;
 using BikeMate.Api.Services;
 using BikeMate.Core.Constants;
 using BikeMate.Core.DTOs;
+using BikeMate.Infrastructure.Data;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.WebUtilities;
+using Microsoft.EntityFrameworkCore;
 using System.Text.Json;
 
 namespace BikeMate.Api.Controllers;
@@ -13,6 +15,7 @@ namespace BikeMate.Api.Controllers;
 [Route("api/[controller]")]
 public sealed class AuthController(
     IAuthService authService,
+    BikeMateDbContext db,
     IConfiguration configuration,
     IHttpClientFactory httpClientFactory) : ControllerBase
 {
@@ -21,6 +24,26 @@ public sealed class AuthController(
     public async Task<ActionResult<AuthResponseDto>> Register(RegisterRequestDto dto, CancellationToken cancellationToken)
     {
         return Ok(await authService.RegisterAsync(dto, cancellationToken));
+    }
+
+    [HttpGet("availability")]
+    [AllowAnonymous]
+    public async Task<ActionResult<AuthAvailabilityDto>> Availability(
+        [FromQuery] string? email,
+        [FromQuery] string? phone,
+        CancellationToken cancellationToken)
+    {
+        var normalizedEmail = string.IsNullOrWhiteSpace(email)
+            ? string.Empty
+            : AuthService.NormalizeEmail(email);
+        var normalizedPhone = AuthService.NormalizePhilippineMobile(phone);
+
+        var emailAvailable = string.IsNullOrWhiteSpace(normalizedEmail) ||
+            !await db.Users.AnyAsync(x => x.Email == normalizedEmail, cancellationToken);
+        var phoneAvailable = string.IsNullOrWhiteSpace(normalizedPhone) ||
+            !await db.Users.AnyAsync(x => x.PhoneNumber == normalizedPhone, cancellationToken);
+
+        return Ok(new AuthAvailabilityDto(emailAvailable, phoneAvailable));
     }
 
     [HttpPost("login")]

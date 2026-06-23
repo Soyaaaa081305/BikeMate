@@ -143,6 +143,9 @@ public sealed class BikeMateDbContext(DbContextOptions<BikeMateDbContext> option
             entity.ToTable("clients");
             entity.HasKey(x => x.ClientId);
             entity.HasIndex(x => x.UserId).IsUnique();
+            entity.Property(x => x.MiddleName).HasMaxLength(100);
+            entity.Property(x => x.Sex).HasMaxLength(30);
+            entity.Property(x => x.ValidIdImageUrl).HasMaxLength(500);
             entity.Property(x => x.CreatedAt).HasDefaultValueSql("SYSUTCDATETIME()");
             entity.HasOne(x => x.User).WithOne(x => x.Client).HasForeignKey<Client>(x => x.UserId).OnDelete(DeleteBehavior.Cascade);
         });
@@ -153,6 +156,7 @@ public sealed class BikeMateDbContext(DbContextOptions<BikeMateDbContext> option
             entity.HasKey(x => x.AddressId);
             entity.Property(x => x.AddressLine).HasMaxLength(500).IsRequired();
             entity.Property(x => x.Label).HasMaxLength(100);
+            entity.Property(x => x.Barangay).HasMaxLength(100);
             entity.Property(x => x.City).HasMaxLength(100);
             entity.Property(x => x.Province).HasMaxLength(100);
             entity.Property(x => x.PostalCode).HasMaxLength(20);

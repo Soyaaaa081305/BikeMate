@@ -13,6 +13,10 @@ public sealed record LoginRequestDto(
     string Email,
     string Password);
 
+public sealed record AuthAvailabilityDto(
+    bool EmailAvailable,
+    bool PhoneAvailable);
+
 public sealed record AuthResponseDto(
     string AccessToken,
     DateTimeOffset ExpiresAt,

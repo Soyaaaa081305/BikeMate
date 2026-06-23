@@ -37,10 +37,28 @@
 
                     <Button x:Name="SignInButton" Text="Sign In" Clicked="OnSignInClicked" BackgroundColor="#FF6B00" TextColor="White" CornerRadius="8" HeightRequest="50" FontAttributes="Bold" />
 
-                    <Grid ColumnDefinitions="*,*" ColumnSpacing="12">
-                        <Button x:Name="GoogleButton" Text="Google" Clicked="OnGoogleClicked" Grid.Column="0" BackgroundColor="White" TextColor="#1F2933" BorderColor="#E1E1E1" BorderWidth="1" CornerRadius="8" />
-                        <Button Text="Create Account" Clicked="OnCreateAccountClicked" Grid.Column="1" BackgroundColor="#1F2933" TextColor="White" CornerRadius="8" />
+                    <Grid ColumnDefinitions="*,Auto,*" ColumnSpacing="10" Margin="0,2">
+                        <BoxView HeightRequest="1" BackgroundColor="#E8E8E8" VerticalOptions="Center" />
+                        <Label Text="or" Grid.Column="1" FontSize="12" TextColor="#6E6E6E" VerticalTextAlignment="Center" />
+                        <BoxView Grid.Column="2" HeightRequest="1" BackgroundColor="#E8E8E8" VerticalOptions="Center" />
                     </Grid>
+
+                    <Button
+                        x:Name="GoogleButton"
+                        Text="Continue with Google"
+                        ImageSource="google_logo.png"
+                        ContentLayout="Left,12"
+                        Clicked="OnGoogleClicked"
+                        BackgroundColor="White"
+                        TextColor="#1F2933"
+                        BorderColor="#DADCE0"
+                        BorderWidth="1"
+                        CornerRadius="8"
+                        HeightRequest="52"
+                        FontAttributes="Bold"
+                        Padding="18,0" />
+
+                    <Button Text="Create Account" Clicked="OnCreateAccountClicked" BackgroundColor="#1F2933" TextColor="White" CornerRadius="8" HeightRequest="50" FontAttributes="Bold" />
 
                     <Label Text="customer@bikemate.test / Password123!" FontSize="13" TextColor="#6E6E6E" HorizontalTextAlignment="Center" />
                 </VerticalStackLayout>

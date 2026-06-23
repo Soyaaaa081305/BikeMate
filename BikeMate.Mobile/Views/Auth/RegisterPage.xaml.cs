@@ -1,7 +1,11 @@
 using System.Net.Http.Json;
+using System.Net.Mail;
+using System.Text.Json;
+using System.Text.RegularExpressions;
 using BikeMate.Core.Constants;
 using BikeMate.Core.DTOs;
 using BikeMate.Helpers;
+using BikeMate.Services;
 using Microsoft.Maui.Controls.Shapes;
 using Microsoft.Maui.Storage;
 
@@ -19,7 +23,9 @@ public partial class RegisterPage : ContentPage
     private FileResult? _validIdFile;
     private string? _validIdPreviewPath;
 
-    private readonly Entry _phoneEntry = Entry("Enter phone number", Keyboard.Telephone);
+    private bool _formattingPhoneNumber;
+
+    private readonly Entry _phoneEntry = Entry("9XX XXX XXXX", Keyboard.Telephone);
     private readonly Entry _emailEntry = Entry("Enter email", Keyboard.Email);
     private readonly Entry _passwordEntry = Entry("Enter password", null, true);
     private readonly Entry _confirmPasswordEntry = Entry("Confirm password", null, true);
@@ -45,6 +51,8 @@ public partial class RegisterPage : ContentPage
     public RegisterPage()
     {
         InitializeComponent();
+        _phoneEntry.MaxLength = 14;
+        _phoneEntry.TextChanged += PhoneEntry_TextChanged;
         _sexPicker.Items.Add("Female");
         _sexPicker.Items.Add("Male");
         _sexPicker.Items.Add("Prefer not to say");
@@ -55,6 +63,36 @@ public partial class RegisterPage : ContentPage
     {
         _ = GoBackAsync();
         return true;
+    }
+
+    private void PhoneEntry_TextChanged(object? sender, TextChangedEventArgs e)
+    {
+        if (_formattingPhoneNumber)
+        {
+            return;
+        }
+
+        var digits = Regex.Replace(e.NewTextValue ?? string.Empty, @"\D", "");
+        if (digits.StartsWith("63", StringComparison.Ordinal) && digits.Length > 10)
+        {
+            digits = digits[2..];
+        }
+        else if (digits.StartsWith("0", StringComparison.Ordinal) && digits.Length > 10)
+        {
+            digits = digits[1..];
+        }
+
+        if (digits.Length > 10)
+        {
+            digits = digits[..10];
+        }
+
+        if (!string.Equals(digits, e.NewTextValue, StringComparison.Ordinal))
+        {
+            _formattingPhoneNumber = true;
+            _phoneEntry.Text = digits;
+            _formattingPhoneNumber = false;
+        }
     }
 
     private void RenderStep()
@@ -76,11 +114,12 @@ public partial class RegisterPage : ContentPage
         switch (_step)
         {
             case 1:
-                body.Add(LabeledField("Phone Number *", _phoneEntry));
+                body.Add(PhoneNumberField());
                 body.Add(LabeledField("Email *", _emailEntry));
                 body.Add(LabeledField("Password *", _passwordEntry));
                 body.Add(LabeledField("Confirm Password *", _confirmPasswordEntry));
-                body.Add(Spacer(70));
+                body.Add(Footnote("Use more than 8 characters."));
+                body.Add(Spacer(32));
                 body.Add(Footnote());
                 body.Add(PrimaryButton("Continue", () => ContinueFromStep1Async()));
                 break;
@@ -127,7 +166,7 @@ public partial class RegisterPage : ContentPage
 
         grid.Add(new Button
         {
-            Text = "‹",
+            Text = "<",
             BackgroundColor = Colors.Transparent,
             TextColor = Color.FromArgb(Dark),
             WidthRequest = 38,
@@ -172,20 +211,16 @@ public partial class RegisterPage : ContentPage
 
     private View AddressGrid()
     {
-        var grid = new Grid
+        return new VerticalStackLayout
         {
-            ColumnDefinitions =
+            Spacing = 10,
+            Children =
             {
-                new ColumnDefinition(GridLength.Star),
-                new ColumnDefinition(GridLength.Star),
-                new ColumnDefinition(GridLength.Star)
-            },
-            ColumnSpacing = 8
+                LabeledField("Province *", _provinceEntry),
+                LabeledField("City *", _cityEntry),
+                LabeledField("Barangay *", _barangayEntry)
+            }
         };
-        grid.Add(LabeledField("Province *", _provinceEntry), 0, 0);
-        grid.Add(LabeledField("City *", _cityEntry), 1, 0);
-        grid.Add(LabeledField("Barangay *", _barangayEntry), 2, 0);
-        return grid;
     }
 
     private View UploadRow()
@@ -248,34 +283,41 @@ public partial class RegisterPage : ContentPage
     private View TermsView()
     {
         var root = new VerticalStackLayout { Spacing = 14 };
-        root.Add(Label("Terms And Condition Policy", 20, Dark, TextAlignment.Center, FontAttributes.Bold));
+        root.Add(Label("Terms and Conditions", 18, Dark, TextAlignment.Center, FontAttributes.Bold));
+        root.Add(Label("Please review these terms before creating your BikeMate account.", 13, Muted, TextAlignment.Center));
         root.Add(Label(
-            "By creating an account with BikeMate, you agree to our Terms of Service and Privacy Policy. BikeMate offers on-demand bicycle repair, maintenance, and tune-up services - either at your location or via pick-up and drop-off. To deliver this service, we collect personal details like your GPS location and contact information to connect you with nearby certified bike mechanics.",
-            14,
+            "Service use. BikeMate connects customers with repair shops, mechanics, emergency roadside support, booking tools, live location, chat, and secure payment. You agree to provide accurate booking, contact, bike, address, and location information so the assigned shop or mechanic can serve you safely.",
+            13,
             Dark,
             TextAlignment.Start));
         root.Add(Label(
-            "You are responsible for providing accurate details and using the app respectfully. Any misuse, dishonest behavior, or violations of our policies may lead to account suspension or removal. While we aim to deliver high-quality service, BikeMate is not a replacement for official bike brand service centers or manufacturer-covered repairs. All services are provided \"as is,\" and we are not liable for circumstances outside our control.",
-            14,
+            "Account responsibility. Keep your login details private, use your real email and Philippine mobile number, and do not create duplicate, misleading, abusive, or fraudulent accounts. BikeMate may suspend or remove accounts that misuse bookings, payments, emergency tools, reviews, or chat.",
+            13,
             Dark,
             TextAlignment.Start));
         root.Add(Label(
-            "Your privacy matters to us. We protect your data with strong security systems, and you have the right to access, correct, or delete your information at any time. We also use cookies to improve your experience, which can be managed through your app settings. For more information, please read our full Terms of Service and Privacy Policy.",
-            14,
+            "Payments and repairs. Prices, availability, pickup, arrival time, parts, and repair outcomes may vary by shop, service, location, and inspection. PayMongo processes secure payments; BikeMate does not store card or wallet credentials. Refunds, cancellations, and disputes may require review of booking records and payment status.",
+            13,
+            Dark,
+            TextAlignment.Start));
+        root.Add(Label(
+            "Privacy and safety. BikeMate collects and uses account details, uploaded IDs, contact details, GPS/location data, booking media, chat records, and payment references only to operate, protect, and improve the service. You may request correction or deletion where allowed by law. Emergency and location features are support tools and do not replace public emergency services.",
+            13,
             Dark,
             TextAlignment.Start));
 
         var check = new CheckBox { IsChecked = _acceptedTerms, Color = Color.FromArgb(Orange) };
         check.CheckedChanged += (_, e) => _acceptedTerms = e.Value;
-        var row = new HorizontalStackLayout
+        var row = new Grid
         {
-            Spacing = 6,
-            Children =
+            ColumnDefinitions =
             {
-                check,
-                Label("I have read and understood the terms and conditions.", 10, Muted, TextAlignment.Start)
+                new ColumnDefinition(GridLength.Auto),
+                new ColumnDefinition(GridLength.Star)
             }
         };
+        row.Add(check, 0, 0);
+        row.Add(Label("I have read, understood, and agree to BikeMate's Terms and Conditions and Privacy Policy.", 11, Muted, TextAlignment.Start), 1, 0);
         root.Add(row);
         root.Add(PrimaryButton("Continue", RegisterAsync));
         return root;
@@ -292,14 +334,91 @@ public partial class RegisterPage : ContentPage
             return;
         }
 
+        string normalizedEmail;
+        string normalizedPhone;
+        try
+        {
+            normalizedEmail = NormalizeEmail(_emailEntry.Text);
+            normalizedPhone = NormalizePhilippineMobile(_phoneEntry.Text);
+        }
+        catch (InvalidOperationException ex)
+        {
+            await DisplayAlertAsync("Check your details", ex.Message, "OK");
+            return;
+        }
+
+        if ((_passwordEntry.Text ?? string.Empty).Length <= 8)
+        {
+            await DisplayAlertAsync("Weak password", "Password must be more than 8 characters.", "OK");
+            return;
+        }
+
         if (!string.Equals(_passwordEntry.Text, _confirmPasswordEntry.Text, StringComparison.Ordinal))
         {
             await DisplayAlertAsync("Password mismatch", "Confirm password must match password.", "OK");
             return;
         }
 
+        if (!await CheckAvailabilityAsync(normalizedEmail, normalizedPhone))
+        {
+            return;
+        }
+
+        _emailEntry.Text = normalizedEmail;
+        _phoneEntry.Text = normalizedPhone;
         _step = 2;
         RenderStep();
+    }
+
+    private async Task<bool> CheckAvailabilityAsync(string email, string phone)
+    {
+        try
+        {
+            SetBusy(true);
+            using var http = ApiConfig.CreateHttpClient();
+            var route = $"auth/availability?email={Uri.EscapeDataString(email)}&phone={Uri.EscapeDataString(phone)}";
+            using var response = await http.GetAsync(route);
+            if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
+            {
+                return true;
+            }
+
+            if (!response.IsSuccessStatusCode)
+            {
+                await DisplayAlertAsync("Validation failed", await ReadErrorAsync(response), "OK");
+                return false;
+            }
+
+            var availability = await response.Content.ReadFromJsonAsync<AuthAvailabilityDto>();
+            if (availability is null)
+            {
+                await DisplayAlertAsync("Validation failed", "BikeMate could not check account availability. Please try again.", "OK");
+                return false;
+            }
+
+            if (!availability.EmailAvailable)
+            {
+                await DisplayAlertAsync("Email already used", "This email address is already registered. Use a different email or sign in instead.", "OK");
+                return false;
+            }
+
+            if (!availability.PhoneAvailable)
+            {
+                await DisplayAlertAsync("Phone already used", "This Philippine mobile number is already registered. Use a different number or sign in instead.", "OK");
+                return false;
+            }
+
+            return true;
+        }
+        catch (Exception ex)
+        {
+            await DisplayAlertAsync("API offline", $"BikeMate could not check duplicate email or phone yet. Start the API, then try again. {ex.Message}", "OK");
+            return false;
+        }
+        finally
+        {
+            SetBusy(false);
+        }
     }
 
     private async Task ContinueFromStep2Async()
@@ -372,10 +491,10 @@ public partial class RegisterPage : ContentPage
             var dto = new RegisterRequestDto(
                 _firstNameEntry.Text?.Trim() ?? "",
                 _lastNameEntry.Text?.Trim() ?? "",
-                _emailEntry.Text?.Trim() ?? "",
+                NormalizeEmail(_emailEntry.Text),
                 _passwordEntry.Text ?? "",
                 _confirmPasswordEntry.Text ?? "",
-                _phoneEntry.Text?.Trim(),
+                NormalizePhilippineMobile(_phoneEntry.Text),
                 AppRoles.Customer);
 
             using var http = ApiConfig.CreateHttpClient();
@@ -383,7 +502,7 @@ public partial class RegisterPage : ContentPage
 
             if (!response.IsSuccessStatusCode)
             {
-                await DisplayAlertAsync("Registration failed", await response.Content.ReadAsStringAsync(), "OK");
+                await DisplayAlertAsync("Registration failed", await ReadErrorAsync(response), "OK");
                 return;
             }
 
@@ -393,6 +512,7 @@ public partial class RegisterPage : ContentPage
                 await SecureStorage.Default.SetAsync("access_token", auth.AccessToken);
                 await SecureStorage.Default.SetAsync("primary_role", AppRoles.Customer);
                 await SecureStorage.Default.SetAsync("user_id", auth.User.UserId.ToString());
+                await PersistCustomerSignupDetailsAsync(dto);
             }
 
             await Shell.Current.GoToAsync($"{nameof(OtpVerificationPage)}?email={Uri.EscapeDataString(dto.Email)}&fromRegister=true");
@@ -405,6 +525,37 @@ public partial class RegisterPage : ContentPage
         {
             SetBusy(false);
         }
+    }
+
+    private async Task PersistCustomerSignupDetailsAsync(RegisterRequestDto dto)
+    {
+        string? validIdUrl = null;
+        if (_validIdFile is not null)
+        {
+            var upload = await CustomerApiClient.UploadFileAsync(_validIdFile, "customer-id");
+            validIdUrl = upload.Url;
+            await CustomerApiClient.UpdateCustomerValidIdAsync(validIdUrl);
+        }
+
+        await CustomerApiClient.UpdateCustomerAsync(new UpsertCustomerProfileDto(
+            dto.FirstName,
+            dto.LastName,
+            dto.Email,
+            dto.PhoneNumber,
+            Clean(_middleNameEntry.Text),
+            _sexPicker.SelectedItem?.ToString(),
+            _birthdayPicker.Date.Date));
+
+        await CustomerApiClient.UpsertAddressAsync(null, new UpsertCustomerAddressDto(
+            "Home",
+            Clean(_addressEditor.Text) ?? string.Empty,
+            Clean(_barangayEntry.Text),
+            Clean(_cityEntry.Text),
+            Clean(_provinceEntry.Text),
+            null,
+            null,
+            null,
+            true));
     }
 
     private async Task GoBackAsync()
@@ -442,7 +593,9 @@ public partial class RegisterPage : ContentPage
     private static Border FieldCard(View content)
     {
         Detach(content);
-        return Card(content, new Thickness(10, 0), 4);
+        var card = Card(content, new Thickness(10, 0), 4);
+        card.HorizontalOptions = LayoutOptions.Fill;
+        return card;
     }
 
     private static View LabeledField(string label, View content)
@@ -450,10 +603,53 @@ public partial class RegisterPage : ContentPage
         return new VerticalStackLayout
         {
             Spacing = 5,
+            HorizontalOptions = LayoutOptions.Fill,
             Children =
             {
                 Label(label, 10, Dark, TextAlignment.Start, FontAttributes.Bold),
                 FieldCard(content)
+            }
+        };
+    }
+
+    private View PhoneNumberField()
+    {
+        Detach(_phoneEntry);
+
+        var prefix = Label("+63", 13, Dark, TextAlignment.Start, FontAttributes.Bold);
+        prefix.VerticalOptions = LayoutOptions.Center;
+
+        var divider = new BoxView
+        {
+            WidthRequest = 1,
+            HeightRequest = 24,
+            Color = Color.FromArgb(BorderColor),
+            VerticalOptions = LayoutOptions.Center
+        };
+
+        var row = new Grid
+        {
+            ColumnDefinitions =
+            {
+                new ColumnDefinition(GridLength.Auto),
+                new ColumnDefinition(GridLength.Auto),
+                new ColumnDefinition(GridLength.Star)
+            },
+            ColumnSpacing = 10,
+            HorizontalOptions = LayoutOptions.Fill
+        };
+        row.Add(prefix, 0, 0);
+        row.Add(divider, 1, 0);
+        row.Add(_phoneEntry, 2, 0);
+
+        return new VerticalStackLayout
+        {
+            Spacing = 5,
+            HorizontalOptions = LayoutOptions.Fill,
+            Children =
+            {
+                Label("Phone Number *", 10, Dark, TextAlignment.Start, FontAttributes.Bold),
+                Card(row, new Thickness(10, 0), 4)
             }
         };
     }
@@ -467,6 +663,7 @@ public partial class RegisterPage : ContentPage
             StrokeShape = new RoundRectangle { CornerRadius = radius },
             BackgroundColor = Colors.White,
             Padding = padding,
+            HorizontalOptions = LayoutOptions.Fill,
             Content = content
         };
     }
@@ -482,6 +679,7 @@ public partial class RegisterPage : ContentPage
             HeightRequest = 46,
             FontSize = 13,
             FontAttributes = FontAttributes.Bold,
+            HorizontalOptions = LayoutOptions.Fill,
             Command = new Command(async () => await action())
         };
     }
@@ -508,6 +706,77 @@ public partial class RegisterPage : ContentPage
     private static View Footnote(string text = "Fields with asterisk (*) are required.")
     {
         return Label(text, 9, Muted, TextAlignment.Center);
+    }
+
+    private static string NormalizeEmail(string? email)
+    {
+        var normalized = email?.Trim().ToLowerInvariant() ?? string.Empty;
+        if (string.IsNullOrWhiteSpace(normalized))
+        {
+            throw new InvalidOperationException("Email is required.");
+        }
+
+        try
+        {
+            var address = new MailAddress(normalized);
+            if (!string.Equals(address.Address, normalized, StringComparison.OrdinalIgnoreCase))
+            {
+                throw new FormatException();
+            }
+        }
+        catch
+        {
+            throw new InvalidOperationException("Enter a valid email address.");
+        }
+
+        return normalized;
+    }
+
+    private static string NormalizePhilippineMobile(string? phoneNumber)
+    {
+        var digits = Regex.Replace(phoneNumber?.Trim() ?? string.Empty, @"\D", "");
+        var localNumber = digits;
+
+        if (digits.StartsWith("63", StringComparison.Ordinal) && digits.Length == 12)
+        {
+            localNumber = digits[2..];
+        }
+        else if (digits.StartsWith("0", StringComparison.Ordinal) && digits.Length == 11)
+        {
+            localNumber = digits[1..];
+        }
+
+        if (!Regex.IsMatch(localNumber, @"^9\d{9}$"))
+        {
+            throw new InvalidOperationException("Enter the 10 digits after +63, for example 9171234567.");
+        }
+
+        return $"+63{localNumber}";
+    }
+
+    private static async Task<string> ReadErrorAsync(HttpResponseMessage response)
+    {
+        var content = await response.Content.ReadAsStringAsync();
+        if (string.IsNullOrWhiteSpace(content))
+        {
+            return $"Request failed with HTTP {(int)response.StatusCode}.";
+        }
+
+        try
+        {
+            using var document = JsonDocument.Parse(content);
+            if (document.RootElement.TryGetProperty("error", out var error) &&
+                error.ValueKind == JsonValueKind.String)
+            {
+                return error.GetString() ?? content;
+            }
+        }
+        catch
+        {
+            // Fall back to raw content below.
+        }
+
+        return content;
     }
 
     private static View Spacer(double height)

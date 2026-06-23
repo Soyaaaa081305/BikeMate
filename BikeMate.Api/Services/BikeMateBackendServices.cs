@@ -2,12 +2,14 @@ using System.IdentityModel.Tokens.Jwt;
 using System.Buffers.Binary;
 using System.IO.Compression;
 using System.Net;
+using System.Net.Mail;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Security.Claims;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using BikeMate.Core.Constants;
 using BikeMate.Core.DTOs;
 using BikeMate.Core.Entities;
@@ -272,6 +274,7 @@ public sealed class AuthService(
 {
     public async Task<AuthResponseDto> RegisterAsync(RegisterRequestDto dto, CancellationToken cancellationToken)
     {
+        ValidatePassword(dto.Password);
         if (!string.Equals(dto.Password, dto.ConfirmPassword, StringComparison.Ordinal))
         {
             throw new InvalidOperationException("Passwords do not match.");
@@ -282,10 +285,17 @@ public sealed class AuthService(
             throw new InvalidOperationException("Invalid role.");
         }
 
-        var normalizedEmail = dto.Email.Trim().ToLowerInvariant();
+        var normalizedEmail = NormalizeEmail(dto.Email);
+        var normalizedPhone = NormalizePhilippineMobile(dto.PhoneNumber);
         if (await db.Users.AnyAsync(x => x.Email == normalizedEmail, cancellationToken))
         {
             throw new InvalidOperationException("Email is already registered.");
+        }
+
+        if (!string.IsNullOrWhiteSpace(normalizedPhone) &&
+            await db.Users.AnyAsync(x => x.PhoneNumber == normalizedPhone, cancellationToken))
+        {
+            throw new InvalidOperationException("Phone number is already registered.");
         }
 
         var role = await db.Roles.SingleAsync(x => x.RoleName == dto.Role, cancellationToken);
@@ -294,7 +304,7 @@ public sealed class AuthService(
             FirstName = dto.FirstName.Trim(),
             LastName = dto.LastName.Trim(),
             Email = normalizedEmail,
-            PhoneNumber = dto.PhoneNumber,
+            PhoneNumber = normalizedPhone,
             PasswordHash = passwordService.HashPassword(dto.Password),
             AccountStatus = "pending",
             CreatedAt = DateTime.UtcNow
@@ -473,6 +483,7 @@ public sealed class AuthService(
 
     public async Task ResetPasswordAsync(ResetPasswordRequestDto dto, CancellationToken cancellationToken)
     {
+        ValidatePassword(dto.NewPassword);
         if (!string.Equals(dto.NewPassword, dto.ConfirmPassword, StringComparison.Ordinal))
         {
             throw new InvalidOperationException("Passwords do not match.");
@@ -510,6 +521,58 @@ public sealed class AuthService(
         });
         await db.SaveChangesAsync(cancellationToken);
         await emailService.SendOtpAsync(user, code, purpose, cancellationToken);
+    }
+
+    public static string NormalizeEmail(string? email)
+    {
+        var normalized = email?.Trim().ToLowerInvariant() ?? string.Empty;
+        if (string.IsNullOrWhiteSpace(normalized))
+        {
+            throw new InvalidOperationException("Email is required.");
+        }
+
+        try
+        {
+            var address = new MailAddress(normalized);
+            if (!string.Equals(address.Address, normalized, StringComparison.OrdinalIgnoreCase))
+            {
+                throw new FormatException();
+            }
+        }
+        catch
+        {
+            throw new InvalidOperationException("Enter a valid email address.");
+        }
+
+        return normalized;
+    }
+
+    public static string? NormalizePhilippineMobile(string? phoneNumber)
+    {
+        if (string.IsNullOrWhiteSpace(phoneNumber))
+        {
+            return null;
+        }
+
+        var compact = Regex.Replace(phoneNumber.Trim(), @"[\s().-]", "");
+        if (!Regex.IsMatch(compact, @"^(?:\+?63|0)9\d{9}$"))
+        {
+            throw new InvalidOperationException("Enter a valid Philippine mobile number, for example 09171234567 or +639171234567.");
+        }
+
+        return compact.StartsWith("09", StringComparison.Ordinal)
+            ? $"+63{compact[1..]}"
+            : compact.StartsWith("+63", StringComparison.Ordinal)
+                ? compact
+                : $"+{compact}";
+    }
+
+    private static void ValidatePassword(string password)
+    {
+        if (string.IsNullOrWhiteSpace(password) || password.Length <= 8)
+        {
+            throw new InvalidOperationException("Password must be more than 8 characters.");
+        }
     }
 
     private async Task<AuthResponseDto> CreateAuthResponseAsync(int userId, CancellationToken cancellationToken)
@@ -718,6 +781,11 @@ public sealed class ServiceRequestService(BikeMateDbContext db) : IServiceReques
         if (selectedService is not null && dto.ShopId is not null && selectedService.ShopId != dto.ShopId)
         {
             throw new InvalidOperationException("Selected service does not belong to the selected shop.");
+        }
+
+        if (dto.ScheduledAt is { } scheduledAt && scheduledAt.ToUniversalTime() <= DateTime.UtcNow)
+        {
+            throw new InvalidOperationException("Choose a future service date and time before booking.");
         }
 
         var selectedShopId = dto.ShopId ?? selectedService?.ShopId;

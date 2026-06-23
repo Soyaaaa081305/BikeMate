@@ -38,7 +38,26 @@ public sealed class LocationsController(
             .OrderByDescending(x => x.CreatedAt)
             .Select(x => new LiveLocationDto(x.LiveLocationId, x.RequestId, x.MechanicId, x.Latitude, x.Longitude, x.CreatedAt))
             .FirstOrDefaultAsync(cancellationToken);
-        return location is null ? NotFound() : Ok(location);
+        if (location is not null)
+        {
+            return Ok(location);
+        }
+
+        var assignedMechanic = await db.ServiceRequests
+            .Where(x => x.RequestId == requestId &&
+                        x.MechanicId != null &&
+                        x.Mechanic!.CurrentLatitude != null &&
+                        x.Mechanic.CurrentLongitude != null)
+            .Select(x => new LiveLocationDto(
+                0,
+                x.RequestId,
+                x.MechanicId,
+                x.Mechanic!.CurrentLatitude!.Value,
+                x.Mechanic.CurrentLongitude!.Value,
+                DateTime.UtcNow))
+            .FirstOrDefaultAsync(cancellationToken);
+
+        return assignedMechanic is null ? NotFound() : Ok(assignedMechanic);
     }
 
     [HttpGet("mechanic/{mechanicId:int}/latest")]

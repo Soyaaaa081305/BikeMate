@@ -97,6 +97,10 @@ public sealed class Client
 {
     public int ClientId { get; set; }
     public int UserId { get; set; }
+    public string? MiddleName { get; set; }
+    public string? Sex { get; set; }
+    public DateTime? Birthdate { get; set; }
+    public string? ValidIdImageUrl { get; set; }
     public DateTime CreatedAt { get; set; }
 
     public User? User { get; set; }
@@ -112,6 +116,7 @@ public sealed class ClientAddress
     public int ClientId { get; set; }
     public string? Label { get; set; }
     public string AddressLine { get; set; } = string.Empty;
+    public string? Barangay { get; set; }
     public string? City { get; set; }
     public string? Province { get; set; }
     public string? PostalCode { get; set; }

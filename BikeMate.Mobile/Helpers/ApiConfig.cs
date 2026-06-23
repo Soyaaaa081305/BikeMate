@@ -20,11 +20,18 @@ public static class ApiConfig
                 HttpClientHandler.DangerousAcceptAnyServerCertificateValidator;
         }
 
-        return new HttpClient(handler)
+        var http = new HttpClient(handler)
         {
             BaseAddress = new Uri(BaseUrl),
             Timeout = TimeSpan.FromSeconds(20)
         };
+
+        if (BaseUrl.Contains("ngrok-free.dev", StringComparison.OrdinalIgnoreCase))
+        {
+            http.DefaultRequestHeaders.Add("ngrok-skip-browser-warning", "true");
+        }
+
+        return http;
     }
 
     public static async Task<HttpClient> CreateAuthorizedHttpClientAsync()

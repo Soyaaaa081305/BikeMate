@@ -1,7 +1,6 @@
 using System.Diagnostics;
+using System.Net.Http.Headers;
 using System.Net.Http.Json;
-using System.Security.Cryptography;
-using System.Text;
 using System.Text.Json;
 using BikeMate.Core.Constants;
 using BikeMate.Core.DTOs;
@@ -18,14 +17,12 @@ public static class GoogleSignInService
     {
         try
         {
-            var state = CreateBase64UrlToken(32);
-            var codeVerifier = CreateCodeVerifier();
-            var startUri = BuildGoogleAuthorizationUri(state, codeVerifier);
+            var startUri = BuildApiGoogleStartUri(role);
             await EnsureBrowserAvailableAsync(startUri);
 
             var result = await WebAuthenticator.Default.AuthenticateAsync(
                 startUri,
-                new Uri(GoogleAuthConfig.RedirectUri));
+                new Uri(GoogleAuthConfig.ApiCallbackUri));
 
             if (result.Properties.TryGetValue("error", out var error) &&
                 !string.IsNullOrWhiteSpace(error))
@@ -33,31 +30,30 @@ public static class GoogleSignInService
                 throw new InvalidOperationException(error);
             }
 
-            if (!result.Properties.TryGetValue("state", out var returnedState) ||
-                !string.Equals(returnedState, state, StringComparison.Ordinal))
+            if (!result.Properties.TryGetValue("access_token", out var accessToken) ||
+                string.IsNullOrWhiteSpace(accessToken))
             {
-                throw new InvalidOperationException("Google sign-in returned an invalid security state. Please try again.");
+                throw new InvalidOperationException("Google sign-in completed, but BikeMate did not receive an access token.");
             }
 
-            if (!result.Properties.TryGetValue("code", out var code) ||
-                string.IsNullOrWhiteSpace(code))
-            {
-                throw new InvalidOperationException("Google sign-in completed without an authorization code.");
-            }
-
-            var idToken = await ExchangeCodeForIdTokenAsync(code, codeVerifier);
             using var api = ApiConfig.CreateHttpClient();
-            using var response = await api.PostAsJsonAsync("auth/google/mobile-complete", new GoogleLoginRequestDto(idToken, role));
+            api.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
+            using var response = await api.GetAsync("auth/me");
             if (!response.IsSuccessStatusCode)
             {
                 var errorBody = await response.Content.ReadAsStringAsync();
                 throw new InvalidOperationException(string.IsNullOrWhiteSpace(errorBody)
-                    ? "BikeMate API rejected the Google sign-in."
+                    ? "BikeMate API rejected the Google sign-in token."
                     : errorBody);
             }
 
-            return await response.Content.ReadFromJsonAsync<AuthResponseDto>()
+            var profile = await response.Content.ReadFromJsonAsync<UserProfileDto>()
                 ?? throw new InvalidOperationException("BikeMate API did not return the Google account profile.");
+            var expiresAt = result.Properties.TryGetValue("expires_at", out var rawExpiresAt) &&
+                DateTimeOffset.TryParse(rawExpiresAt, out var parsedExpiresAt)
+                    ? parsedExpiresAt
+                    : DateTimeOffset.UtcNow.AddDays(7);
+            return new AuthResponseDto(accessToken, expiresAt, profile);
         }
         catch (TaskCanceledException)
         {
@@ -67,79 +63,15 @@ public static class GoogleSignInService
         {
             Debug.WriteLine($"Google sign-in failed: {ex}");
             throw new InvalidOperationException(
-                "Google sign-in could not start or complete. Check that the BikeMate API is running, the Google web OAuth client is configured on the API, and Chrome is enabled on the emulator.",
+                "Google sign-in could not start or complete. Check that the BikeMate API is running, the ngrok Google callback is added to Google Console, and Chrome is enabled on the device.",
                 ex);
         }
     }
 
-    private static Uri BuildGoogleAuthorizationUri(string state, string codeVerifier)
+    private static Uri BuildApiGoogleStartUri(string role)
     {
-        var query = new Dictionary<string, string?>
-        {
-            ["client_id"] = GoogleAuthConfig.AndroidClientId,
-            ["redirect_uri"] = GoogleAuthConfig.RedirectUri,
-            ["response_type"] = "code",
-            ["scope"] = "openid email profile",
-            ["state"] = state,
-            ["prompt"] = "select_account",
-            ["code_challenge"] = CreateCodeChallenge(codeVerifier),
-            ["code_challenge_method"] = "S256"
-        };
-
-        var queryString = string.Join("&", query.Select(x =>
-            $"{Uri.EscapeDataString(x.Key)}={Uri.EscapeDataString(x.Value ?? string.Empty)}"));
-        return new Uri($"https://accounts.google.com/o/oauth2/v2/auth?{queryString}");
-    }
-
-    private static async Task<string> ExchangeCodeForIdTokenAsync(string code, string codeVerifier)
-    {
-        using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(20) };
-        using var response = await http.PostAsync(
-            "https://oauth2.googleapis.com/token",
-            new FormUrlEncodedContent(new Dictionary<string, string>
-            {
-                ["client_id"] = GoogleAuthConfig.AndroidClientId,
-                ["code"] = code,
-                ["code_verifier"] = codeVerifier,
-                ["grant_type"] = "authorization_code",
-                ["redirect_uri"] = GoogleAuthConfig.RedirectUri
-            }));
-
-        var payload = await response.Content.ReadAsStringAsync();
-        if (!response.IsSuccessStatusCode)
-        {
-            throw new InvalidOperationException($"Google token exchange failed: {payload}");
-        }
-
-        using var document = JsonDocument.Parse(payload);
-        return document.RootElement.TryGetProperty("id_token", out var idToken) &&
-               !string.IsNullOrWhiteSpace(idToken.GetString())
-            ? idToken.GetString()!
-            : throw new InvalidOperationException("Google did not return an ID token.");
-    }
-
-    private static string CreateCodeVerifier()
-    {
-        return CreateBase64UrlToken(64);
-    }
-
-    private static string CreateCodeChallenge(string codeVerifier)
-    {
-        return Base64Url(SHA256.HashData(Encoding.ASCII.GetBytes(codeVerifier)));
-    }
-
-    private static string CreateBase64UrlToken(int byteCount)
-    {
-        var bytes = RandomNumberGenerator.GetBytes(byteCount);
-        return Base64Url(bytes);
-    }
-
-    private static string Base64Url(byte[] bytes)
-    {
-        return Convert.ToBase64String(bytes)
-            .TrimEnd('=')
-            .Replace('+', '-')
-            .Replace('/', '_');
+        var baseUri = new Uri(ApiConfig.BaseUrl, UriKind.Absolute);
+        return new Uri(baseUri, $"auth/google/start?role={Uri.EscapeDataString(role)}");
     }
 
     public static async Task StoreAuthAsync(AuthResponseDto auth)

@@ -152,6 +152,10 @@ public sealed class ServiceRequestsController(
             .Select(x => (int?)x.MechanicId)
             .FirstOrDefaultAsync(cancellationToken);
         request.MechanicId = mechanicId ?? request.MechanicId;
+        if (request.MechanicId is not null)
+        {
+            await EnsureInitialMechanicLocationAsync(request, request.MechanicId.Value, cancellationToken);
+        }
 
         await db.SaveChangesAsync(cancellationToken);
         var updated = await serviceRequestService.UpdateStatusAsync(id, request.MechanicId is null ? "pending" : "accepted", userId, "Customer selected repair shop.", cancellationToken);
@@ -221,5 +225,38 @@ public sealed class ServiceRequestsController(
         {
             throw new UnauthorizedAccessException("You cannot view this request.");
         }
+    }
+
+    private async Task EnsureInitialMechanicLocationAsync(ServiceRequest request, int mechanicId, CancellationToken cancellationToken)
+    {
+        var hasLocation = await db.LiveLocations.AnyAsync(x => x.RequestId == request.RequestId, cancellationToken);
+        if (hasLocation)
+        {
+            return;
+        }
+
+        var mechanic = await db.Mechanics.SingleOrDefaultAsync(x => x.MechanicId == mechanicId, cancellationToken);
+        if (mechanic is null)
+        {
+            return;
+        }
+
+        var latitude = request.ServiceLatitude is null ? mechanic.CurrentLatitude ?? 14.6010m : request.ServiceLatitude.Value + 0.0030m;
+        var longitude = request.ServiceLongitude is null ? mechanic.CurrentLongitude ?? 120.9830m : request.ServiceLongitude.Value - 0.0020m;
+
+        mechanic.AvailabilityStatus = "online";
+        mechanic.CurrentLatitude = latitude;
+        mechanic.CurrentLongitude = longitude;
+        mechanic.UpdatedAt = DateTime.UtcNow;
+
+        db.LiveLocations.Add(new LiveLocation
+        {
+            RequestId = request.RequestId,
+            MechanicId = mechanicId,
+            Latitude = latitude,
+            Longitude = longitude,
+            AccuracyMeters = 12m,
+            CreatedAt = DateTime.UtcNow
+        });
     }
 }

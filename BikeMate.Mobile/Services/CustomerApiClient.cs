@@ -48,6 +48,36 @@ internal static class CustomerApiClient
         await ReadAsync<object>(response, cancellationToken);
     }
 
+    public static async Task UpdateCustomerProfileImageAsync(string imageUrl, CancellationToken cancellationToken = default)
+    {
+        using var http = await ApiConfig.CreateAuthorizedHttpClientAsync();
+        using var response = await http.PutAsJsonAsync(
+            "customers/me/profile-image",
+            new UploadMediaDto(imageUrl, "profile_photo", "Customer profile photo"),
+            cancellationToken);
+        await ReadAsync<object>(response, cancellationToken);
+    }
+
+    public static async Task UpdateCustomerValidIdAsync(string imageUrl, CancellationToken cancellationToken = default)
+    {
+        using var http = await ApiConfig.CreateAuthorizedHttpClientAsync();
+        using var response = await http.PutAsJsonAsync(
+            "customers/me/valid-id",
+            new UploadMediaDto(imageUrl, "valid_id", "Customer valid ID"),
+            cancellationToken);
+        await ReadAsync<object>(response, cancellationToken);
+    }
+
+    public static async Task DeleteCustomerAccountAsync(CancellationToken cancellationToken = default)
+    {
+        using var http = await ApiConfig.CreateAuthorizedHttpClientAsync();
+        using var response = await http.DeleteAsync("customers/me", cancellationToken);
+        if (!response.IsSuccessStatusCode)
+        {
+            await ReadAsync<object>(response, cancellationToken);
+        }
+    }
+
     public static async Task<CustomerAddressDto> UpsertAddressAsync(CustomerAddressDto? existing, UpsertCustomerAddressDto dto, CancellationToken cancellationToken = default)
     {
         using var http = await ApiConfig.CreateAuthorizedHttpClientAsync();
@@ -288,10 +318,19 @@ internal sealed record CustomerMeDto(
     int ClientId,
     int UserId,
     string FirstName,
+    string? MiddleName,
     string LastName,
     string Email,
     string? PhoneNumber,
     string? ProfileImageUrl,
+    bool EmailVerified,
+    bool PhoneVerified,
+    string AccountStatus,
+    DateTime CreatedAt,
+    DateTime? UpdatedAt,
+    string? Sex,
+    DateTime? Birthdate,
+    string? ValidIdImageUrl,
     IReadOnlyList<CustomerAddressDto> Addresses,
     IReadOnlyList<MotorcycleDto> Motorcycles);
 

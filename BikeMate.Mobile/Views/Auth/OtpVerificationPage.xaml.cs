@@ -196,11 +196,8 @@ public partial class OtpVerificationPage : ContentPage
                 return;
             }
 
-            var proceed = await DisplayAlertAsync("Account Successfully Verified", "Your BikeMate customer account is ready.", "Proceed to Dashboard", "Stay Here");
-            if (proceed)
-            {
-                await Shell.Current.GoToAsync("//CustomerHomePage");
-            }
+            await DisplayAlertAsync("Account Successfully Verified", "Your BikeMate customer account is ready.", "Go to Dashboard");
+            await Shell.Current.GoToAsync("//CustomerHomePage");
         }
         catch (Exception ex)
         {
