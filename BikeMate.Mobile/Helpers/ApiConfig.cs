@@ -1,4 +1,17 @@
+using System.Net;
+using System.Net.Http.Headers;
+
 namespace BikeMate.Helpers;
+
+public enum StoredSessionStatus
+{
+    Missing,
+    Valid,
+    Rejected,
+    Unavailable
+}
+
+public sealed class ApiSessionExpiredException(string message) : InvalidOperationException(message);
 
 public static class ApiConfig
 {
@@ -38,12 +51,57 @@ public static class ApiConfig
     {
         var http = CreateHttpClient();
         var token = await SecureStorage.Default.GetAsync("access_token");
-        if (!string.IsNullOrWhiteSpace(token))
+        if (string.IsNullOrWhiteSpace(token))
         {
-            http.DefaultRequestHeaders.Authorization =
-                new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token);
+            http.Dispose();
+            await AppNavigation.HandleUnauthorizedAsync();
+            throw new ApiSessionExpiredException("Your BikeMate session has ended. Please sign in again.");
         }
 
+        http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
         return http;
+    }
+
+    public static async Task<StoredSessionStatus> ValidateStoredSessionAsync(CancellationToken cancellationToken = default)
+    {
+        var token = await SecureStorage.Default.GetAsync("access_token");
+        if (string.IsNullOrWhiteSpace(token))
+        {
+            return StoredSessionStatus.Missing;
+        }
+
+        try
+        {
+            using var http = CreateHttpClient();
+            http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
+            using var response = await http.GetAsync("auth/me", cancellationToken);
+            if (response.IsSuccessStatusCode)
+            {
+                return StoredSessionStatus.Valid;
+            }
+
+            return response.StatusCode == HttpStatusCode.Unauthorized
+                ? StoredSessionStatus.Rejected
+                : StoredSessionStatus.Unavailable;
+        }
+        catch (HttpRequestException)
+        {
+            return StoredSessionStatus.Unavailable;
+        }
+        catch (TaskCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            return StoredSessionStatus.Unavailable;
+        }
+    }
+
+    public static async Task ThrowIfAuthenticationFailedAsync(HttpResponseMessage response)
+    {
+        if (response.StatusCode != HttpStatusCode.Unauthorized)
+        {
+            return;
+        }
+
+        await AppNavigation.HandleUnauthorizedAsync();
+        throw new ApiSessionExpiredException("Your BikeMate session has expired. Please sign in again.");
     }
 }

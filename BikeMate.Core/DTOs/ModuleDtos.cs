@@ -238,7 +238,10 @@ public sealed record ConversationSummaryDto(
     string? Subtitle,
     int? OtherUserId,
     string? OtherProfileImageUrl,
-    string? LastMessageText);
+    string? LastMessageText,
+    int UnreadCount = 0,
+    string? BookingStatus = null,
+    DateTime? ScheduledAt = null);
 public sealed record StartConversationDto(int? RequestId, IReadOnlyCollection<int> ParticipantUserIds);
 public sealed record MessageDto(int MessageId, int ConversationId, int SenderUserId, string MessageText, string? AttachmentUrl, DateTime CreatedAt, DateTime? ReadAt);
 public sealed record SendMessageDto(string MessageText, string? AttachmentUrl);

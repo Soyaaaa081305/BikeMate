@@ -183,6 +183,15 @@ public abstract class CustomerPageBase : ContentPage
                 FontFamily = CustomerUi.FontDisplay
             }, 2, 0);
         }
+        else
+        {
+            grid.Add(new BoxView
+            {
+                WidthRequest = 56,
+                Opacity = 0,
+                InputTransparent = true
+            }, 2, 0);
+        }
 
         return grid;
     }
@@ -466,7 +475,10 @@ public sealed class CustomerHomePage : CustomerPageBase
         scroller.Content = cards;
         body.Add(scroller);
 
-        body.Add(Label("Booked Repairs", 14, CustomerUi.Dark, FontAttributes.Bold));
+        var bookedRepairsTitle = Label("Booked Repairs", 14, CustomerUi.Dark, FontAttributes.Bold);
+        bookedRepairsTitle.HorizontalOptions = LayoutOptions.Fill;
+        bookedRepairsTitle.HorizontalTextAlignment = TextAlignment.Center;
+        body.Add(bookedRepairsTitle);
         var visibleRequests = requests.OrderByDescending(x => x.CreatedAt).Take(3).ToArray();
         if (visibleRequests.Length == 0)
         {
@@ -663,6 +675,7 @@ public sealed class CustomerProfilePage : CustomerPageBase
     private Entry? _bikePlateEntry;
     private Entry? _bikeEngineEntry;
     private Entry? _bikeColorEntry;
+    private bool _isLoading;
     private bool _isSaving;
 
     public CustomerProfilePage()
@@ -674,14 +687,27 @@ public sealed class CustomerProfilePage : CustomerPageBase
     protected override async void OnAppearing()
     {
         base.OnAppearing();
+        if (_isLoading)
+        {
+            return;
+        }
+
+        _isLoading = true;
         try
         {
             _customer = await CustomerApiClient.GetCustomerAsync();
             Render();
         }
+        catch (ApiSessionExpiredException)
+        {
+        }
         catch (Exception ex)
         {
-            Render($"Connect the API to load profile data. {ex.Message}");
+            Render($"Account details could not be loaded. Check your connection and try again. {ex.Message}");
+        }
+        finally
+        {
+            _isLoading = false;
         }
     }
 
@@ -902,9 +928,22 @@ public sealed class CustomerProfilePage : CustomerPageBase
         }
 
         var firstName = Clean(_firstNameEntry?.Text);
+        var middleName = Clean(_middleNameEntry?.Text);
         var lastName = Clean(_lastNameEntry?.Text);
         var email = Clean(_emailEntry?.Text);
+        var phoneNumber = Clean(_phoneEntry?.Text);
+        var sex = _sexPicker?.SelectedItem?.ToString();
+        var birthdate = _birthdaySwitch?.IsToggled == true ? _birthdayPicker?.Date?.Date : null;
+        var province = Clean(_provinceEntry?.Text);
+        var city = Clean(_cityEntry?.Text);
+        var barangay = Clean(_barangayEntry?.Text);
         var addressLine = Clean(_addressEditor?.Text);
+        var bikeBrand = Clean(_bikeBrandEntry?.Text);
+        var bikeModel = Clean(_bikeModelEntry?.Text);
+        var yearText = Clean(_bikeYearEntry?.Text);
+        var bikePlate = Clean(_bikePlateEntry?.Text);
+        var bikeEngine = Clean(_bikeEngineEntry?.Text);
+        var bikeColor = Clean(_bikeColorEntry?.Text);
 
         if (firstName is null || lastName is null || email is null)
         {
@@ -918,16 +957,15 @@ public sealed class CustomerProfilePage : CustomerPageBase
             return;
         }
 
-        var hasBikeDetails = HasText(_bikeBrandEntry) || HasText(_bikeModelEntry) || HasText(_bikeYearEntry) ||
-                             HasText(_bikePlateEntry) || HasText(_bikeEngineEntry) || HasText(_bikeColorEntry);
-        if (hasBikeDetails && (!HasText(_bikeBrandEntry) || !HasText(_bikeModelEntry)))
+        var hasBikeDetails = bikeBrand is not null || bikeModel is not null || yearText is not null ||
+                             bikePlate is not null || bikeEngine is not null || bikeColor is not null;
+        if (hasBikeDetails && (bikeBrand is null || bikeModel is null))
         {
             await DisplayAlertAsync("Motorcycle details", "Bike brand and model are required when saving motorcycle details.", "OK");
             return;
         }
 
         int? yearModel = null;
-        var yearText = Clean(_bikeYearEntry?.Text);
         if (yearText is not null)
         {
             if (!int.TryParse(yearText, NumberStyles.None, CultureInfo.InvariantCulture, out var parsedYear) ||
@@ -949,18 +987,18 @@ public sealed class CustomerProfilePage : CustomerPageBase
                 firstName,
                 lastName,
                 email,
-                Clean(_phoneEntry?.Text),
-                Clean(_middleNameEntry?.Text),
-                _sexPicker?.SelectedItem?.ToString());
-               // _birthdaySwitch?.IsToggled == true ? _birthdayPicker?.Date.Date : null));
+                phoneNumber,
+                middleName,
+                sex,
+                birthdate));
 
             var existingAddress = _customer.Addresses.FirstOrDefault(x => x.IsDefault) ?? _customer.Addresses.FirstOrDefault();
             await CustomerApiClient.UpsertAddressAsync(existingAddress, new UpsertCustomerAddressDto(
                 existingAddress?.Label ?? "Home",
                 addressLine,
-                Clean(_barangayEntry?.Text),
-                Clean(_cityEntry?.Text),
-                Clean(_provinceEntry?.Text),
+                barangay,
+                city,
+                province,
                 existingAddress?.PostalCode,
                 existingAddress?.Latitude,
                 existingAddress?.Longitude,
@@ -970,25 +1008,23 @@ public sealed class CustomerProfilePage : CustomerPageBase
             {
                 var existingMotorcycle = _customer.Motorcycles.FirstOrDefault();
                 await CustomerApiClient.UpsertMotorcycleAsync(existingMotorcycle, new UpsertMotorcycleDto(
-                    Clean(_bikeBrandEntry?.Text) ?? string.Empty,
-                    Clean(_bikeModelEntry?.Text) ?? string.Empty,
+                    bikeBrand ?? string.Empty,
+                    bikeModel ?? string.Empty,
                     yearModel,
-                    Clean(_bikePlateEntry?.Text),
-                    Clean(_bikeEngineEntry?.Text),
-                    Clean(_bikeColorEntry?.Text),
+                    bikePlate,
+                    bikeEngine,
+                    bikeColor,
                     existingMotorcycle?.MotorcycleImageUrl));
             }
 
             _customer = await CustomerApiClient.GetCustomerAsync();
+            _isSaving = false;
             Render("Account details saved.");
         }
         catch (Exception ex)
         {
-            Render($"Account details were not saved. {ex.Message}");
-        }
-        finally
-        {
             _isSaving = false;
+            Render($"Account details were not saved. {ex.Message}");
         }
     }
 
@@ -1243,11 +1279,6 @@ public sealed class CustomerProfilePage : CustomerPageBase
         };
     }
 
-    private static bool HasText(Entry? entry)
-    {
-        return !string.IsNullOrWhiteSpace(entry?.Text);
-    }
-
     private static string? Clean(string? value)
     {
         return string.IsNullOrWhiteSpace(value) ? null : value.Trim();
@@ -1322,6 +1353,7 @@ public sealed class CustomerHelpDeskPage : CustomerPageBase
 public sealed class CustomerSchedulePage : CustomerPageBase
 {
     private IReadOnlyList<ServiceRequestDto> _requests = [];
+    private bool _showHistory;
 
     public CustomerSchedulePage()
     {
@@ -1352,14 +1384,24 @@ public sealed class CustomerSchedulePage : CustomerPageBase
             body.Add(Card(Label(banner, 11, CustomerUi.Muted), Colors.White, 8, new Thickness(12)));
         }
 
-        body.Add(Tabs("Upcoming", "History"));
-        if (_requests.Count == 0)
+        body.Add(Tabs());
+
+        var visibleRequests = _requests
+            .Where(request => IsHistoryRequest(request) == _showHistory)
+            .OrderByDescending(request => request.CreatedAt)
+            .ToArray();
+        if (visibleRequests.Length == 0)
         {
-            body.Add(Card(Label("No booked repairs yet.", 12, CustomerUi.Muted)));
+            body.Add(Card(Label(
+                _showHistory
+                    ? "No completed or cancelled repairs yet."
+                    : "No upcoming or active repairs right now.",
+                12,
+                CustomerUi.Muted)));
         }
         else
         {
-            foreach (var request in _requests.OrderByDescending(x => x.CreatedAt))
+            foreach (var request in visibleRequests)
             {
                 body.Add(ScheduleCard(request));
             }
@@ -1368,19 +1410,61 @@ public sealed class CustomerSchedulePage : CustomerPageBase
         SetScaffold(new ScrollView { Content = body }, "Schedule");
     }
 
-    private static View Tabs(string active, string other)
+    private View Tabs()
     {
         var grid = new Grid
         {
+            HeightRequest = 46,
             ColumnDefinitions =
             {
                 new ColumnDefinition(GridLength.Star),
                 new ColumnDefinition(GridLength.Star)
-            }
+            },
+            ColumnSpacing = 0
         };
-        grid.Add(new Button { Text = active, BackgroundColor = CustomerUi.Orange, TextColor = Colors.White, CornerRadius = 0 }, 0, 0);
-        grid.Add(new Button { Text = other, BackgroundColor = Colors.White, TextColor = CustomerUi.Dark, CornerRadius = 0 }, 1, 0);
-        return grid;
+
+        grid.Add(TabButton("Upcoming", !_showHistory, () =>
+        {
+            _showHistory = false;
+            Render();
+        }), 0, 0);
+        grid.Add(TabButton("History", _showHistory, () =>
+        {
+            _showHistory = true;
+            Render();
+        }), 1, 0);
+
+        return new Border
+        {
+            Stroke = CustomerUi.Border,
+            StrokeThickness = 1,
+            StrokeShape = new RoundRectangle { CornerRadius = 8 },
+            BackgroundColor = Colors.White,
+            Content = grid
+        };
+    }
+
+    private static Button TabButton(string text, bool selected, Action select)
+    {
+        return new Button
+        {
+            Text = text,
+            Command = new Command(select),
+            BackgroundColor = selected ? CustomerUi.Orange : Colors.White,
+            TextColor = selected ? Colors.White : CustomerUi.Dark,
+            CornerRadius = 7,
+            FontAttributes = FontAttributes.Bold,
+            FontFamily = CustomerUi.FontDisplay,
+            FontSize = CustomerUi.BodySize,
+            Padding = new Thickness(12, 0)
+        };
+    }
+
+    private static bool IsHistoryRequest(ServiceRequestDto request)
+    {
+        return request.CurrentStatus.Equals("completed", StringComparison.OrdinalIgnoreCase) ||
+               request.CurrentStatus.Equals("cancelled", StringComparison.OrdinalIgnoreCase) ||
+               request.CurrentStatus.Equals("rejected", StringComparison.OrdinalIgnoreCase);
     }
 
     private static View ScheduleCard(ServiceRequestDto request)
@@ -1416,6 +1500,9 @@ public sealed class CustomerSchedulePage : CustomerPageBase
 public sealed class CustomerMessagesPage : CustomerPageBase
 {
     private IReadOnlyList<ConversationSummaryDto> _conversations = [];
+    private string _filter = "all";
+    private string _searchText = string.Empty;
+    private bool _isLoading;
 
     public CustomerMessagesPage()
     {
@@ -1426,63 +1513,158 @@ public sealed class CustomerMessagesPage : CustomerPageBase
     protected override async void OnAppearing()
     {
         base.OnAppearing();
+        if (_isLoading)
+        {
+            return;
+        }
+
+        _isLoading = true;
         try
         {
             _conversations = await CustomerApiClient.GetConversationsAsync();
             Render();
         }
+        catch (ApiSessionExpiredException)
+        {
+        }
         catch (Exception ex)
         {
-            Render($"Connect the API to load messages. {ex.Message}");
+            Render($"Messages could not be loaded. Check your connection and try again. {ex.Message}");
+        }
+        finally
+        {
+            _isLoading = false;
         }
     }
 
     private void Render(string? banner = null)
     {
-        var body = new VerticalStackLayout { Padding = new Thickness(16, 10, 16, 10), Spacing = 10 };
-        var header = new Grid
+        var body = new VerticalStackLayout
         {
-            ColumnDefinitions =
-            {
-                new ColumnDefinition(GridLength.Auto),
-                new ColumnDefinition(GridLength.Star),
-                new ColumnDefinition(GridLength.Auto)
-            }
+            Padding = new Thickness(16, 8, 16, 18),
+            Spacing = 12,
+            BackgroundColor = CustomerUi.Page
         };
-        header.Add(new Button
+        body.Add(Header("Messages", false));
+        var subtitle = Label("Booking conversations with your repair shop and assigned mechanic.", 11, CustomerUi.Muted);
+        subtitle.HorizontalTextAlignment = TextAlignment.Center;
+        body.Add(subtitle);
+
+        var search = new Entry
         {
-            Text = "Back",
-            BackgroundColor = Colors.Transparent,
+            Text = _searchText,
+            Placeholder = "Search messages or booking ID",
+            ReturnType = ReturnType.Search,
+            BackgroundColor = Colors.White,
             TextColor = CustomerUi.Dark,
-            FontSize = 13,
-            WidthRequest = 56,
-            HeightRequest = 40,
-            CornerRadius = 20,
-            Padding = new Thickness(0),
-            Command = new Command(async () => await Shell.Current.GoToAsync("//CustomerHomePage"))
-        }, 0, 0);
-        header.Add(Label("Messages", 28, CustomerUi.Orange, FontAttributes.Bold), 1, 0);
-        header.Add(new Entry { Placeholder = "Search...", FontSize = 11, WidthRequest = 110, BackgroundColor = Color.FromArgb("#EFEFEF") }, 2, 0);
-        body.Add(header);
+            PlaceholderColor = CustomerUi.Muted,
+            FontFamily = CustomerUi.FontBody,
+            FontSize = CustomerUi.BodySize,
+            HeightRequest = 48
+        };
+        search.Completed += (_, _) =>
+        {
+            _searchText = search.Text?.Trim() ?? string.Empty;
+            Render();
+        };
+        body.Add(Card(search, Colors.White, 8, new Thickness(10, 0)));
+        body.Add(FilterTabs());
 
         if (!string.IsNullOrWhiteSpace(banner))
         {
             body.Add(Card(Label(banner, 11, CustomerUi.Muted), Colors.White, 8, new Thickness(12)));
         }
 
-        if (_conversations.Count == 0)
+        var visibleConversations = _conversations
+            .Where(MatchesFilter)
+            .Where(MatchesSearch)
+            .ToArray();
+        if (visibleConversations.Length == 0)
         {
-            body.Add(Card(Label("No conversations yet. Messages appear here after a booking has a mechanic or shop conversation.", 12, CustomerUi.Muted)));
+            body.Add(Card(Label(
+                string.IsNullOrWhiteSpace(_searchText)
+                    ? "No booking conversations are available in this view yet."
+                    : "No conversations match your search.",
+                12,
+                CustomerUi.Muted)));
         }
         else
         {
-            foreach (var conversation in _conversations)
+            foreach (var conversation in visibleConversations)
             {
                 body.Add(MessageRow(conversation));
             }
         }
 
         SetScaffold(new ScrollView { Content = body }, "Messages");
+    }
+
+    private View FilterTabs()
+    {
+        var grid = new Grid
+        {
+            HeightRequest = 44,
+            ColumnDefinitions =
+            {
+                new ColumnDefinition(GridLength.Star),
+                new ColumnDefinition(GridLength.Star),
+                new ColumnDefinition(GridLength.Star)
+            }
+        };
+        grid.Add(FilterButton("All", "all"), 0, 0);
+        grid.Add(FilterButton("Shops", "shop"), 1, 0);
+        grid.Add(FilterButton("Mechanics", "mechanic"), 2, 0);
+        return new Border
+        {
+            Stroke = CustomerUi.Border,
+            StrokeThickness = 1,
+            StrokeShape = new RoundRectangle { CornerRadius = 8 },
+            BackgroundColor = Colors.White,
+            Content = grid
+        };
+    }
+
+    private Button FilterButton(string label, string value)
+    {
+        var selected = _filter == value;
+        return new Button
+        {
+            Text = label,
+            BackgroundColor = selected ? CustomerUi.Orange : Colors.White,
+            TextColor = selected ? Colors.White : CustomerUi.Dark,
+            FontFamily = CustomerUi.FontDisplay,
+            FontAttributes = FontAttributes.Bold,
+            FontSize = CustomerUi.BodySize,
+            CornerRadius = 7,
+            Command = new Command(() =>
+            {
+                _filter = value;
+                Render();
+            })
+        };
+    }
+
+    private bool MatchesFilter(ConversationSummaryDto conversation)
+    {
+        return _filter switch
+        {
+            "shop" => IsShopConversation(conversation),
+            "mechanic" => IsMechanicConversation(conversation),
+            _ => true
+        };
+    }
+
+    private bool MatchesSearch(ConversationSummaryDto conversation)
+    {
+        if (string.IsNullOrWhiteSpace(_searchText))
+        {
+            return true;
+        }
+
+        return conversation.Title.Contains(_searchText, StringComparison.OrdinalIgnoreCase) ||
+               (conversation.Subtitle?.Contains(_searchText, StringComparison.OrdinalIgnoreCase) ?? false) ||
+               (conversation.LastMessageText?.Contains(_searchText, StringComparison.OrdinalIgnoreCase) ?? false) ||
+               (conversation.RequestId?.ToString(CultureInfo.InvariantCulture).Contains(_searchText, StringComparison.OrdinalIgnoreCase) ?? false);
     }
 
     private static View MessageRow(ConversationSummaryDto conversation)
@@ -1497,20 +1679,123 @@ public sealed class CustomerMessagesPage : CustomerPageBase
             }
         };
 
-        grid.Add(Avatar(Initials(conversation.Title), 44, Colors.White), 0, 0);
+        var avatar = ConversationAvatar(conversation);
+        grid.Add(avatar, 0, 0);
 
-        var text = new VerticalStackLayout { Spacing = 2, Margin = new Thickness(10, 0, 0, 0) };
-        text.Add(Label(conversation.Title, 12, CustomerUi.Dark, FontAttributes.Bold));
-        text.Add(Label(conversation.LastMessageText ?? conversation.Subtitle ?? "Open conversation", 12, CustomerUi.Dark));
+        var text = new VerticalStackLayout { Spacing = 5, Margin = new Thickness(10, 0, 8, 0) };
+        var titleRow = new HorizontalStackLayout { Spacing = 6 };
+        titleRow.Add(Label(conversation.Title, 13, CustomerUi.Dark, FontAttributes.Bold));
+        titleRow.Add(TypeBadge(conversation));
+        text.Add(titleRow);
+        var bookingLine = Label(
+            conversation.RequestId is null
+                ? conversation.Subtitle ?? "BikeMate conversation"
+                : $"BM-{conversation.RequestId:000000} | {FormatStatus(conversation.BookingStatus ?? "pending")}",
+            10,
+            CustomerUi.Muted);
+        text.Add(bookingLine);
+        var preview = Label(Preview(conversation.LastMessageText ?? conversation.Subtitle ?? "Open conversation"), 11, CustomerUi.Dark);
+        preview.LineBreakMode = LineBreakMode.TailTruncation;
+        preview.MaxLines = 2;
+        text.Add(preview);
         grid.Add(text, 1, 0);
-        grid.Add(Label(conversation.LastMessageAt?.ToLocalTime().ToString("dd/MM/yyyy", CultureInfo.InvariantCulture) ?? "", 9, CustomerUi.Dark), 2, 0);
 
-        var row = Card(grid, conversation.LastMessageText is null ? Color.FromArgb("#EFEFF4") : CustomerUi.LightOrange, 0, new Thickness(10));
+        var meta = new VerticalStackLayout { Spacing = 8, HorizontalOptions = LayoutOptions.End };
+        meta.Add(Label(FriendlyTime(conversation.LastMessageAt), 9, CustomerUi.Muted));
+        if (conversation.UnreadCount > 0)
+        {
+            meta.Add(new Border
+            {
+                BackgroundColor = CustomerUi.Orange,
+                Stroke = Colors.Transparent,
+                StrokeShape = new RoundRectangle { CornerRadius = 10 },
+                HeightRequest = 20,
+                MinimumWidthRequest = 20,
+                Padding = new Thickness(6, 1),
+                HorizontalOptions = LayoutOptions.End,
+                Content = new Label
+                {
+                    Text = conversation.UnreadCount > 99 ? "99+" : conversation.UnreadCount.ToString(CultureInfo.InvariantCulture),
+                    TextColor = Colors.White,
+                    FontSize = CustomerUi.CaptionSize,
+                    FontFamily = CustomerUi.FontCaptionBold,
+                    HorizontalTextAlignment = TextAlignment.Center
+                }
+            });
+        }
+        grid.Add(meta, 2, 0);
+
+        var row = Card(grid, Colors.White, 8, new Thickness(12));
         row.GestureRecognizers.Add(new TapGestureRecognizer
         {
             Command = new Command(async () => await Shell.Current.Navigation.PushAsync(new CustomerChatPage(conversation.ConversationId)))
         });
         return row;
+    }
+
+    private static View ConversationAvatar(ConversationSummaryDto conversation)
+    {
+        if (!string.IsNullOrWhiteSpace(conversation.OtherProfileImageUrl))
+        {
+            return new Border
+            {
+                WidthRequest = 50,
+                HeightRequest = 50,
+                Stroke = CustomerUi.Border,
+                StrokeThickness = 1,
+                StrokeShape = new RoundRectangle { CornerRadius = 25 },
+                Content = new Image
+                {
+                    Source = conversation.OtherProfileImageUrl,
+                    Aspect = Aspect.AspectFill
+                }
+            };
+        }
+
+        return Avatar(Initials(conversation.Title), 50, IsShopConversation(conversation) ? CustomerUi.LightOrange : Color.FromArgb("#EEF1F4"));
+    }
+
+    private static View TypeBadge(ConversationSummaryDto conversation)
+    {
+        var isShop = IsShopConversation(conversation);
+        return new Border
+        {
+            BackgroundColor = isShop ? CustomerUi.LightOrange : Color.FromArgb("#EEF1F4"),
+            Stroke = Colors.Transparent,
+            StrokeShape = new RoundRectangle { CornerRadius = 8 },
+            Padding = new Thickness(7, 2),
+            Content = Label(isShop ? "SHOP" : "MECHANIC", 9, isShop ? CustomerUi.Orange : CustomerUi.Dark, FontAttributes.Bold)
+        };
+    }
+
+    private static bool IsShopConversation(ConversationSummaryDto conversation)
+    {
+        return conversation.ConversationType == "booking_shop";
+    }
+
+    private static bool IsMechanicConversation(ConversationSummaryDto conversation)
+    {
+        return conversation.ConversationType is "booking_mechanic" or "emergency_request" or "service_request";
+    }
+
+    private static string Preview(string text)
+    {
+        return string.Join(" ", text.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries)).Trim();
+    }
+
+    private static string FriendlyTime(DateTime? value)
+    {
+        if (value is null)
+        {
+            return string.Empty;
+        }
+
+        var local = value.Value.ToLocalTime();
+        return local.Date == DateTime.Today
+            ? local.ToString("h:mm tt", CultureInfo.InvariantCulture)
+            : local.Year == DateTime.Today.Year
+                ? local.ToString("MMM d", CultureInfo.InvariantCulture)
+                : local.ToString("MMM d, yyyy", CultureInfo.InvariantCulture);
     }
 }
 
@@ -1565,6 +1850,7 @@ public sealed class CustomerChatPage : CustomerPageBase, IQueryAttributable
             var conversations = await CustomerApiClient.GetConversationsAsync();
             _conversation = conversations.FirstOrDefault(x => x.ConversationId == _conversationId);
             _messages = await CustomerApiClient.GetMessagesAsync(_conversationId);
+            await CustomerApiClient.MarkConversationReadAsync(_conversationId);
             Render();
         }
         catch (Exception ex)
@@ -1596,7 +1882,8 @@ public sealed class CustomerChatPage : CustomerPageBase, IQueryAttributable
     {
         var grid = new Grid
         {
-            Padding = new Thickness(14, 8),
+            Padding = new Thickness(14, 10),
+            BackgroundColor = Colors.White,
             ColumnDefinitions =
             {
                 new ColumnDefinition(GridLength.Auto),
@@ -1631,13 +1918,19 @@ public sealed class CustomerChatPage : CustomerPageBase, IQueryAttributable
         grid.Add(Avatar(Initials(_conversation?.Title), 42, CustomerUi.LightOrange), 1, 0);
 
         var who = new VerticalStackLayout { Spacing = 1, Margin = new Thickness(8, 0, 0, 0) };
-        who.Add(Label(_conversation?.Title ?? "Conversation", 12, CustomerUi.Dark, FontAttributes.Bold));
-        who.Add(Label(_conversation?.Subtitle ?? "BikeMate chat", 10, CustomerUi.Muted));
+        who.Add(Label(_conversation?.Title ?? "Conversation", 13, CustomerUi.Dark, FontAttributes.Bold));
+        who.Add(Label(PartnerCaption(), 10, CustomerUi.Muted));
         grid.Add(who, 2, 0);
 
-        grid.Add(HeaderIcon("i", _conversation?.Title ?? "Conversation"), 3, 0);
+        grid.Add(HeaderIcon("Info", BookingInfo()), 3, 0);
 
-        return grid;
+        return new Border
+        {
+            Stroke = CustomerUi.Border,
+            StrokeThickness = 1,
+            BackgroundColor = Colors.White,
+            Content = grid
+        };
     }
 
     private static Button HeaderIcon(string text, string title)
@@ -1645,7 +1938,8 @@ public sealed class CustomerChatPage : CustomerPageBase, IQueryAttributable
         return new Button
         {
             Text = text,
-            FontSize = 11,
+            FontSize = CustomerUi.CaptionSize,
+            FontFamily = CustomerUi.FontCaptionBold,
             BackgroundColor = Colors.Transparent,
             TextColor = CustomerUi.Orange,
             WidthRequest = text.Length > 2 ? 58 : 38,
@@ -1655,27 +1949,38 @@ public sealed class CustomerChatPage : CustomerPageBase, IQueryAttributable
 
     private View BuildMessages(string? banner)
     {
-        var body = new VerticalStackLayout { Padding = new Thickness(16), Spacing = 12 };
+        var body = new VerticalStackLayout
+        {
+            Padding = new Thickness(16, 12, 16, 20),
+            Spacing = 10,
+            BackgroundColor = CustomerUi.Page
+        };
         if (!string.IsNullOrWhiteSpace(banner))
         {
             body.Add(Card(Label(banner, 11, CustomerUi.Muted), Colors.White, 8, new Thickness(12)));
         }
 
+        if (_conversation?.RequestId is not null)
+        {
+            body.Add(BookingContextCard());
+        }
+
         if (_messages.Count == 0)
         {
-            body.Add(Card(Label("No messages yet.", 12, CustomerUi.Muted)));
+            body.Add(Card(Label("No messages yet. Send a message to begin the conversation.", 12, CustomerUi.Muted)));
             return body;
         }
 
+        DateTime? currentDate = null;
         foreach (var message in _messages.OrderBy(x => x.CreatedAt))
         {
-            body.Add(new Label
+            var localDate = message.CreatedAt.ToLocalTime().Date;
+            if (currentDate != localDate)
             {
-                Text = message.CreatedAt.ToLocalTime().ToString("dd/MM/yyyy, h:mmtt", CultureInfo.InvariantCulture),
-                FontSize = 11,
-                TextColor = CustomerUi.Muted,
-                HorizontalTextAlignment = TextAlignment.Center
-            });
+                currentDate = localDate;
+                body.Add(DateDivider(localDate));
+            }
+
             body.Add(Bubble(message, message.SenderUserId == _customer?.UserId));
         }
 
@@ -1685,6 +1990,11 @@ public sealed class CustomerChatPage : CustomerPageBase, IQueryAttributable
     private static View Bubble(MessageDto message, bool mine)
     {
         var stack = new VerticalStackLayout { Spacing = 6 };
+        if (!mine && IsAutomatedMessage(message.MessageText))
+        {
+            stack.Add(Label("AUTOMATED BOOKING UPDATE", 9, CustomerUi.Orange, FontAttributes.Bold));
+        }
+
         if (!string.IsNullOrWhiteSpace(message.MessageText))
         {
             stack.Add(Label(message.MessageText, 12, mine ? Colors.White : CustomerUi.Dark));
@@ -1695,9 +2005,16 @@ public sealed class CustomerChatPage : CustomerPageBase, IQueryAttributable
             stack.Add(AttachmentPreview(message.AttachmentUrl, mine));
         }
 
-        var bubble = Card(stack, mine ? CustomerUi.Orange : Color.FromArgb("#D9D9D9"), 8, new Thickness(12, 8));
+        var time = Label(
+            message.CreatedAt.ToLocalTime().ToString("h:mm tt", CultureInfo.InvariantCulture),
+            9,
+            mine ? Color.FromArgb("#FFF0E9") : CustomerUi.Muted);
+        time.HorizontalTextAlignment = mine ? TextAlignment.End : TextAlignment.Start;
+        stack.Add(time);
+
+        var bubble = Card(stack, mine ? CustomerUi.Orange : Colors.White, 8, new Thickness(12, 9));
         bubble.HorizontalOptions = mine ? LayoutOptions.End : LayoutOptions.Start;
-        bubble.MaximumWidthRequest = 280;
+        bubble.MaximumWidthRequest = 300;
         return bubble;
     }
 
@@ -1757,20 +2074,28 @@ public sealed class CustomerChatPage : CustomerPageBase, IQueryAttributable
         _messageEntry = new Entry
         {
             Text = _draftMessage,
-            Placeholder = "Message",
-            BackgroundColor = Color.FromArgb("#E8E8E8"),
-            FontSize = 13
+            Placeholder = "Write a message",
+            BackgroundColor = Colors.Transparent,
+            TextColor = CustomerUi.Dark,
+            PlaceholderColor = CustomerUi.Muted,
+            FontFamily = CustomerUi.FontBody,
+            FontSize = CustomerUi.BodySize
         };
         _messageEntry.TextChanged += (_, e) => _draftMessage = e.NewTextValue ?? string.Empty;
 
-        var stack = new VerticalStackLayout { Padding = new Thickness(14, 4, 14, 10), Spacing = 6 };
+        var stack = new VerticalStackLayout
+        {
+            Padding = new Thickness(14, 8, 14, 12),
+            Spacing = 8,
+            BackgroundColor = Colors.White
+        };
         var attachments = new HorizontalStackLayout
         {
             Spacing = 8,
             Children =
             {
-                GhostButton("FILE", new Command(async () => await PickAndSendAttachmentAsync(false))),
-                GhostButton("PHOTOS", new Command(async () => await PickAndSendAttachmentAsync(true)))
+                CompactAction("Attach file", new Command(async () => await PickAndSendAttachmentAsync(false))),
+                CompactAction("Add photo", new Command(async () => await PickAndSendAttachmentAsync(true)))
             }
         };
         stack.Add(attachments);
@@ -1779,29 +2104,136 @@ public sealed class CustomerChatPage : CustomerPageBase, IQueryAttributable
         {
             ColumnDefinitions =
             {
-                new ColumnDefinition(GridLength.Auto),
+                new ColumnDefinition(GridLength.Star),
+                new ColumnDefinition(GridLength.Auto)
+            },
+            ColumnSpacing = 8
+        };
+        grid.Add(new Border
+        {
+            Stroke = CustomerUi.Border,
+            StrokeThickness = 1,
+            StrokeShape = new RoundRectangle { CornerRadius = 8 },
+            BackgroundColor = Color.FromArgb("#F8F8F8"),
+            Padding = new Thickness(10, 0),
+            Content = _messageEntry
+        }, 0, 0);
+        grid.Add(new Button
+        {
+            Text = _isSending ? "Sending" : "Send",
+            BackgroundColor = CustomerUi.Orange,
+            TextColor = Colors.White,
+            CornerRadius = 8,
+            WidthRequest = 76,
+            FontFamily = CustomerUi.FontDisplay,
+            FontAttributes = FontAttributes.Bold,
+            Command = new Command(async () => await SendAsync())
+        }, 1, 0);
+        stack.Add(grid);
+        return new Border
+        {
+            Stroke = CustomerUi.Border,
+            StrokeThickness = 1,
+            BackgroundColor = Colors.White,
+            Content = stack
+        };
+    }
+
+    private View BookingContextCard()
+    {
+        var stack = new VerticalStackLayout { Spacing = 7 };
+        var top = new Grid
+        {
+            ColumnDefinitions =
+            {
                 new ColumnDefinition(GridLength.Star),
                 new ColumnDefinition(GridLength.Auto)
             }
         };
-        grid.Add(new Button
+        top.Add(Label($"Booking BM-{_conversation!.RequestId:000000}", 12, CustomerUi.Dark, FontAttributes.Bold), 0, 0);
+        top.Add(new Border
         {
-            Text = "+",
-            BackgroundColor = Colors.Transparent,
-            TextColor = CustomerUi.Muted,
-            FontSize = 18,
-            Command = new Command(async () => await PickAndSendAttachmentAsync(false))
-        }, 0, 0);
-        grid.Add(_messageEntry, 1, 0);
-        grid.Add(new Button
+            BackgroundColor = CustomerUi.LightOrange,
+            Stroke = Colors.Transparent,
+            StrokeShape = new RoundRectangle { CornerRadius = 8 },
+            Padding = new Thickness(8, 3),
+            Content = Label(FormatStatus(_conversation.BookingStatus ?? "pending"), 9, CustomerUi.Orange, FontAttributes.Bold)
+        }, 1, 0);
+        stack.Add(top);
+        stack.Add(Label(_conversation.Subtitle ?? "Booking conversation", 10, CustomerUi.Muted));
+        if (_conversation.ScheduledAt is not null)
         {
-            Text = _isSending ? "Sending..." : "Send",
+            stack.Add(Label(
+                $"Scheduled {_conversation.ScheduledAt.Value.ToLocalTime():MMM d, yyyy 'at' h:mm tt}",
+                10,
+                CustomerUi.Dark));
+        }
+
+        var openBooking = GhostButton("View booking details", new Command(async () =>
+            await Shell.Current.GoToAsync($"{nameof(BookingDetailsPage)}?requestId={_conversation.RequestId}")));
+        openBooking.HeightRequest = 38;
+        stack.Add(openBooking);
+        return Card(stack, Colors.White, 8, new Thickness(12));
+    }
+
+    private static View DateDivider(DateTime date)
+    {
+        var text = date == DateTime.Today
+            ? "Today"
+            : date == DateTime.Today.AddDays(-1)
+                ? "Yesterday"
+                : date.ToString("MMM d, yyyy", CultureInfo.InvariantCulture);
+        var label = Label(text, 9, CustomerUi.Muted, FontAttributes.Bold);
+        label.HorizontalTextAlignment = TextAlignment.Center;
+        label.HorizontalOptions = LayoutOptions.Fill;
+        return label;
+    }
+
+    private static Button CompactAction(string text, ICommand command)
+    {
+        return new Button
+        {
+            Text = text,
+            Command = command,
             BackgroundColor = Colors.Transparent,
-            TextColor = CustomerUi.Orange,
-            Command = new Command(async () => await SendAsync())
-        }, 2, 0);
-        stack.Add(grid);
-        return stack;
+            TextColor = CustomerUi.Dark,
+            BorderColor = CustomerUi.Border,
+            BorderWidth = 1,
+            CornerRadius = 8,
+            HeightRequest = 34,
+            Padding = new Thickness(12, 0),
+            FontFamily = CustomerUi.FontBody,
+            FontSize = CustomerUi.CaptionSize
+        };
+    }
+
+    private string PartnerCaption()
+    {
+        var partner = _conversation?.ConversationType == "booking_shop" ? "Repair shop" : "Assigned mechanic";
+        return _conversation?.RequestId is null
+            ? partner
+            : $"{partner} | BM-{_conversation.RequestId:000000}";
+    }
+
+    private string BookingInfo()
+    {
+        if (_conversation?.RequestId is null)
+        {
+            return _conversation?.Title ?? "BikeMate conversation";
+        }
+
+        return
+            $"Booking BM-{_conversation.RequestId:000000}\n" +
+            $"Partner: {_conversation.Title}\n" +
+            $"Status: {FormatStatus(_conversation.BookingStatus ?? "pending")}\n" +
+            $"{_conversation.Subtitle}";
+    }
+
+    private static bool IsAutomatedMessage(string text)
+    {
+        return text.StartsWith("Booking BM-", StringComparison.Ordinal) ||
+               (text.StartsWith("Hi ", StringComparison.Ordinal) &&
+                text.Contains("assigned to booking BM-", StringComparison.Ordinal));
     }
 
     private async Task SendAsync()
@@ -1899,6 +2331,7 @@ public sealed class CustomerPaymentsPage : CustomerPageBase
 {
     private IReadOnlyList<PaymentDto> _payments = [];
     private IReadOnlyList<ServiceRequestDto> _requests = [];
+    private bool _showHistory;
 
     public CustomerPaymentsPage()
     {
@@ -1930,14 +2363,24 @@ public sealed class CustomerPaymentsPage : CustomerPageBase
             body.Add(Card(Label(banner, 11, CustomerUi.Muted), Colors.White, 8, new Thickness(12)));
         }
 
-        body.Add(PaymentTabs("Ongoing", "History"));
-        if (_payments.Count == 0)
+        body.Add(PaymentTabs());
+
+        var visiblePayments = _payments
+            .Where(payment => IsHistoricalPayment(payment) == _showHistory)
+            .OrderByDescending(payment => payment.PaidAt ?? payment.CreatedAt)
+            .ToArray();
+        if (visiblePayments.Length == 0)
         {
-            body.Add(Card(Label("No payments yet. Completed or checkout payments will appear here.", 12, CustomerUi.Muted)));
+            body.Add(Card(Label(
+                _showHistory
+                    ? "No completed, cancelled, failed, or refunded payments yet."
+                    : "No payments are currently awaiting completion.",
+                12,
+                CustomerUi.Muted)));
         }
         else
         {
-            foreach (var payment in _payments.OrderByDescending(x => x.CreatedAt))
+            foreach (var payment in visiblePayments)
             {
                 var request = _requests.FirstOrDefault(x => x.RequestId == payment.RequestId);
                 body.Add(PaymentRow(payment, request));
@@ -1947,19 +2390,62 @@ public sealed class CustomerPaymentsPage : CustomerPageBase
         SetScaffold(new ScrollView { Content = body }, "Payments");
     }
 
-    private static View PaymentTabs(string active, string other)
+    private View PaymentTabs()
     {
         var grid = new Grid
         {
+            HeightRequest = 46,
             ColumnDefinitions =
             {
                 new ColumnDefinition(GridLength.Star),
                 new ColumnDefinition(GridLength.Star)
-            }
+            },
+            ColumnSpacing = 0
         };
-        grid.Add(new Button { Text = active, BackgroundColor = CustomerUi.Orange, TextColor = CustomerUi.Dark, CornerRadius = 0 }, 0, 0);
-        grid.Add(new Button { Text = other, BackgroundColor = Colors.White, TextColor = CustomerUi.Dark, CornerRadius = 0 }, 1, 0);
-        return grid;
+
+        grid.Add(PaymentTabButton("Ongoing", !_showHistory, () =>
+        {
+            _showHistory = false;
+            Render();
+        }), 0, 0);
+        grid.Add(PaymentTabButton("History", _showHistory, () =>
+        {
+            _showHistory = true;
+            Render();
+        }), 1, 0);
+
+        return new Border
+        {
+            Stroke = CustomerUi.Border,
+            StrokeThickness = 1,
+            StrokeShape = new RoundRectangle { CornerRadius = 8 },
+            BackgroundColor = Colors.White,
+            Content = grid
+        };
+    }
+
+    private static Button PaymentTabButton(string text, bool selected, Action select)
+    {
+        return new Button
+        {
+            Text = text,
+            Command = new Command(select),
+            BackgroundColor = selected ? CustomerUi.Orange : Colors.White,
+            TextColor = selected ? Colors.White : CustomerUi.Dark,
+            CornerRadius = 7,
+            FontAttributes = FontAttributes.Bold,
+            FontFamily = CustomerUi.FontDisplay,
+            FontSize = CustomerUi.BodySize,
+            Padding = new Thickness(12, 0)
+        };
+    }
+
+    private static bool IsHistoricalPayment(PaymentDto payment)
+    {
+        return payment.Status.Equals("paid", StringComparison.OrdinalIgnoreCase) ||
+               payment.Status.Equals("failed", StringComparison.OrdinalIgnoreCase) ||
+               payment.Status.Equals("cancelled", StringComparison.OrdinalIgnoreCase) ||
+               payment.Status.Equals("refunded", StringComparison.OrdinalIgnoreCase);
     }
 
     private static View PaymentRow(PaymentDto payment, ServiceRequestDto? request)

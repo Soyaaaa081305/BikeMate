@@ -50,6 +50,7 @@ internal static class EmergencyService
 
     private static async Task<T> ReadAsync<T>(HttpResponseMessage response, CancellationToken cancellationToken)
     {
+        await ApiConfig.ThrowIfAuthenticationFailedAsync(response);
         if (!response.IsSuccessStatusCode)
         {
             var error = await response.Content.ReadAsStringAsync(cancellationToken);

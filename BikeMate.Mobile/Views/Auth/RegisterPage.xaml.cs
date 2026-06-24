@@ -512,7 +512,18 @@ public partial class RegisterPage : ContentPage
                 await SecureStorage.Default.SetAsync("access_token", auth.AccessToken);
                 await SecureStorage.Default.SetAsync("primary_role", AppRoles.Customer);
                 await SecureStorage.Default.SetAsync("user_id", auth.User.UserId.ToString());
-                await PersistCustomerSignupDetailsAsync(dto);
+                try
+                {
+                    await PersistCustomerSignupDetailsAsync(dto);
+                }
+                catch (Exception profileException)
+                {
+                    System.Diagnostics.Debug.WriteLine($"Registration profile setup failed: {profileException}");
+                    await DisplayAlertAsync(
+                        "Account created",
+                        "Your account was created, but some profile details could not be saved. You can complete them later in Account Details.",
+                        "Continue");
+                }
             }
 
             await Shell.Current.GoToAsync($"{nameof(OtpVerificationPage)}?email={Uri.EscapeDataString(dto.Email)}&fromRegister=true");
@@ -529,12 +540,10 @@ public partial class RegisterPage : ContentPage
 
     private async Task PersistCustomerSignupDetailsAsync(RegisterRequestDto dto)
     {
-        string? validIdUrl = null;
         if (_validIdFile is not null)
         {
             var upload = await CustomerApiClient.UploadFileAsync(_validIdFile, "customer-id");
-            validIdUrl = upload.Url;
-            await CustomerApiClient.UpdateCustomerValidIdAsync(validIdUrl);
+            await CustomerApiClient.UpdateCustomerValidIdAsync(upload.Url);
         }
 
         await CustomerApiClient.UpdateCustomerAsync(new UpsertCustomerProfileDto(
@@ -544,7 +553,7 @@ public partial class RegisterPage : ContentPage
             dto.PhoneNumber,
             Clean(_middleNameEntry.Text),
             _sexPicker.SelectedItem?.ToString(),
-            _birthdayPicker.Date.Date));
+            _birthdayPicker.Date?.Date));
 
         await CustomerApiClient.UpsertAddressAsync(null, new UpsertCustomerAddressDto(
             "Home",
@@ -574,6 +583,11 @@ public partial class RegisterPage : ContentPage
     {
         _busy.IsVisible = value;
         _busy.IsRunning = value;
+    }
+
+    private static string? Clean(string? value)
+    {
+        return string.IsNullOrWhiteSpace(value) ? null : value.Trim();
     }
 
     private static Entry Entry(string placeholder, Keyboard? keyboard = null, bool isPassword = false)

@@ -17,12 +17,14 @@ namespace BikeMate.Api.Controllers;
 public sealed class MessagesController(
     BikeMateDbContext db,
     IMessageService messageService,
+    IBookingConversationService bookingConversationService,
     IHubContext<ChatHub> hubContext) : ControllerBase
 {
     [HttpGet]
     public async Task<ActionResult<IReadOnlyCollection<ConversationSummaryDto>>> GetConversations(CancellationToken cancellationToken)
     {
         var userId = User.GetUserId();
+        await bookingConversationService.SyncForUserAsync(userId, cancellationToken);
         var conversations = await db.Conversations
             .Include(x => x.Participants)
             .ThenInclude(x => x.User)
@@ -34,32 +36,15 @@ public sealed class MessagesController(
             .Include(x => x.Request)
             .ThenInclude(x => x!.Mechanic)
             .ThenInclude(x => x!.User)
+            .Include(x => x.Request)
+            .ThenInclude(x => x!.CurrentStatus)
             .Where(x => x.Participants.Any(p => p.UserId == userId))
-            .OrderByDescending(x => x.LastMessageAt ?? x.CreatedAt)
             .ToArrayAsync(cancellationToken);
 
-        return Ok(conversations.Select(x =>
-        {
-            var otherUser = x.Participants.FirstOrDefault(p => p.UserId != userId)?.User;
-            var lastMessage = x.Messages.OrderByDescending(m => m.CreatedAt).FirstOrDefault();
-            var title = x.Request?.Shop?.ShopName
-                ?? (otherUser is null ? $"Conversation #{x.ConversationId}" : $"{otherUser.FirstName} {otherUser.LastName}");
-            var subtitle = x.Request?.ShopService?.ServiceName
-                ?? x.Request?.IssueDescription
-                ?? otherUser?.PhoneNumber
-                ?? otherUser?.Email;
-
-            return new ConversationSummaryDto(
-                x.ConversationId,
-                x.RequestId,
-                x.ConversationType,
-                x.LastMessageAt,
-                title,
-                subtitle,
-                otherUser?.UserId,
-                otherUser?.ProfileImageUrl,
-                lastMessage?.MessageText);
-        }).ToArray());
+        return Ok(conversations
+            .OrderByDescending(ConversationSortTime)
+            .Select(x => ToSummary(x, userId))
+            .ToArray());
     }
 
     [HttpPost]
@@ -88,24 +73,22 @@ public sealed class MessagesController(
             .Include(x => x.Messages)
             .Include(x => x.Request).ThenInclude(x => x!.Shop)
             .Include(x => x.Request).ThenInclude(x => x!.ShopService)
+            .Include(x => x.Request).ThenInclude(x => x!.Mechanic).ThenInclude(x => x!.User)
+            .Include(x => x.Request).ThenInclude(x => x!.CurrentStatus)
             .SingleAsync(x => x.ConversationId == conversationId && x.Participants.Any(p => p.UserId == userId), cancellationToken);
-        var otherUser = conversation.Participants.FirstOrDefault(p => p.UserId != userId)?.User;
-        var lastMessage = conversation.Messages.OrderByDescending(m => m.CreatedAt).FirstOrDefault();
-        return Ok(new ConversationSummaryDto(
-            conversation.ConversationId,
-            conversation.RequestId,
-            conversation.ConversationType,
-            conversation.LastMessageAt,
-            conversation.Request?.Shop?.ShopName ?? (otherUser is null ? $"Conversation #{conversation.ConversationId}" : $"{otherUser.FirstName} {otherUser.LastName}"),
-            conversation.Request?.ShopService?.ServiceName ?? conversation.Request?.IssueDescription ?? otherUser?.Email,
-            otherUser?.UserId,
-            otherUser?.ProfileImageUrl,
-            lastMessage?.MessageText));
+        return Ok(ToSummary(conversation, userId));
     }
 
     [HttpGet("{conversationId:int}/messages")]
     public async Task<ActionResult<IReadOnlyCollection<MessageDto>>> GetMessages(int conversationId, CancellationToken cancellationToken)
     {
+        var canView = await db.ConversationParticipants
+            .AnyAsync(x => x.ConversationId == conversationId && x.UserId == User.GetUserId(), cancellationToken);
+        if (!canView)
+        {
+            return Forbid();
+        }
+
         return Ok(await db.Messages
             .Where(x => x.ConversationId == conversationId)
             .OrderBy(x => x.CreatedAt)
@@ -151,5 +134,56 @@ public sealed class MessagesController(
         await db.SaveChangesAsync(cancellationToken);
         await hubContext.Clients.Group($"conversation:{message.ConversationId}").SendAsync("MessageRead", messageId, cancellationToken);
         return Ok(new { message = "Message marked as read." });
+    }
+
+    private static ConversationSummaryDto ToSummary(Conversation conversation, int userId)
+    {
+        var otherUser = conversation.Participants.FirstOrDefault(p => p.UserId != userId)?.User;
+        var lastMessage = conversation.Messages.OrderByDescending(m => m.CreatedAt).FirstOrDefault();
+        var isShop = conversation.ConversationType == "booking_shop";
+        var isMechanic = conversation.ConversationType is "booking_mechanic" or "emergency_request";
+        var title = isShop
+            ? conversation.Request?.Shop?.ShopName
+            : isMechanic
+                ? FullName(conversation.Request?.Mechanic?.User ?? otherUser)
+                : FullName(otherUser);
+        var partnerType = isShop ? "Shop" : isMechanic ? "Assigned mechanic" : "BikeMate contact";
+        var service = conversation.Request?.ShopService?.ServiceName
+            ?? conversation.Request?.IssueDescription
+            ?? "Booking support";
+        var bookingReference = conversation.RequestId is null ? null : $"BM-{conversation.RequestId:000000}";
+        var subtitle = bookingReference is null
+            ? otherUser?.PhoneNumber ?? otherUser?.Email
+            : $"{partnerType} | {service} | {bookingReference}";
+
+        return new ConversationSummaryDto(
+            conversation.ConversationId,
+            conversation.RequestId,
+            conversation.ConversationType,
+            conversation.LastMessageAt,
+            string.IsNullOrWhiteSpace(title) ? $"Conversation #{conversation.ConversationId}" : title,
+            subtitle,
+            otherUser?.UserId,
+            otherUser?.ProfileImageUrl,
+            lastMessage?.MessageText,
+            conversation.Messages.Count(x => x.SenderUserId != userId && x.ReadAt == null),
+            conversation.Request?.CurrentStatus?.StatusName,
+            conversation.Request?.ScheduledAt);
+    }
+
+    private static string? FullName(User? user)
+    {
+        return user is null ? null : $"{user.FirstName} {user.LastName}".Trim();
+    }
+
+    private static DateTime ConversationSortTime(Conversation conversation)
+    {
+        var onlyMessage = conversation.Messages.Count == 1 ? conversation.Messages[0] : null;
+        var isAutomatedOnly = onlyMessage is not null &&
+            (onlyMessage.MessageText.StartsWith("Booking BM-", StringComparison.Ordinal) ||
+             onlyMessage.MessageText.StartsWith("Hi ", StringComparison.Ordinal));
+        return isAutomatedOnly
+            ? conversation.Request?.CreatedAt ?? conversation.CreatedAt
+            : conversation.LastMessageAt ?? conversation.CreatedAt;
     }
 }

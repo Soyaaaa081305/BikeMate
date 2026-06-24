@@ -28,6 +28,7 @@ internal static class RiderApiClient
     {
         using var http = await ApiConfig.CreateAuthorizedHttpClientAsync();
         using var response = await http.GetAsync("rider/jobs/current", cancellationToken);
+        await ApiConfig.ThrowIfAuthenticationFailedAsync(response);
         if (!response.IsSuccessStatusCode)
         {
             var error = await response.Content.ReadAsStringAsync(cancellationToken);
@@ -107,6 +108,7 @@ internal static class RiderApiClient
 
     private static async Task<T> ReadAsync<T>(HttpResponseMessage response, CancellationToken cancellationToken)
     {
+        await ApiConfig.ThrowIfAuthenticationFailedAsync(response);
         if (!response.IsSuccessStatusCode)
         {
             var error = await response.Content.ReadAsStringAsync(cancellationToken);

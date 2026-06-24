@@ -1,6 +1,7 @@
 using System.IdentityModel.Tokens.Jwt;
 using System.Buffers.Binary;
 using System.IO.Compression;
+using System.Globalization;
 using System.Net;
 using System.Net.Mail;
 using System.Net.Http.Headers;
@@ -866,6 +867,13 @@ public sealed class MessageService(BikeMateDbContext db) : IMessageService
 {
     public async Task<MessageDto> SendAsync(int userId, int conversationId, SendMessageDto dto, CancellationToken cancellationToken)
     {
+        var canSend = await db.ConversationParticipants
+            .AnyAsync(x => x.ConversationId == conversationId && x.UserId == userId, cancellationToken);
+        if (!canSend)
+        {
+            throw new UnauthorizedAccessException("You are not a participant in this conversation.");
+        }
+
         var message = new Message
         {
             ConversationId = conversationId,
@@ -881,6 +889,205 @@ public sealed class MessageService(BikeMateDbContext db) : IMessageService
         await db.SaveChangesAsync(cancellationToken);
 
         return new MessageDto(message.MessageId, message.ConversationId, message.SenderUserId, message.MessageText, message.AttachmentUrl, message.CreatedAt, message.ReadAt);
+    }
+}
+
+public interface IBookingConversationService
+{
+    Task SyncForUserAsync(int userId, CancellationToken cancellationToken);
+    Task SyncRequestAsync(int requestId, CancellationToken cancellationToken);
+}
+
+public sealed class BookingConversationService(BikeMateDbContext db) : IBookingConversationService
+{
+    public async Task SyncForUserAsync(int userId, CancellationToken cancellationToken)
+    {
+        var requestIds = await db.ServiceRequests
+            .Where(x =>
+                x.Client!.UserId == userId ||
+                (x.ShopId != null && x.Shop!.OwnerUserId == userId) ||
+                (x.MechanicId != null && x.Mechanic!.UserId == userId))
+            .OrderByDescending(x => x.CreatedAt)
+            .Select(x => x.RequestId)
+            .Take(30)
+            .ToArrayAsync(cancellationToken);
+
+        foreach (var requestId in requestIds)
+        {
+            await SyncRequestAsync(requestId, cancellationToken);
+        }
+    }
+
+    public async Task SyncRequestAsync(int requestId, CancellationToken cancellationToken)
+    {
+        var request = await db.ServiceRequests
+            .Include(x => x.Client).ThenInclude(x => x!.User)
+            .Include(x => x.Shop).ThenInclude(x => x!.Owner)
+            .Include(x => x.ShopService)
+            .Include(x => x.Mechanic).ThenInclude(x => x!.User)
+            .Include(x => x.CurrentStatus)
+            .SingleOrDefaultAsync(x => x.RequestId == requestId, cancellationToken);
+        if (request?.Client?.User is null)
+        {
+            return;
+        }
+
+        if (request.Shop?.Owner is not null)
+        {
+            await EnsureConversationAsync(
+                request,
+                "booking_shop",
+                request.Shop.OwnerUserId,
+                BuildShopMessage(request),
+                cancellationToken);
+        }
+
+        if (request.Mechanic?.User is not null)
+        {
+            await EnsureConversationAsync(
+                request,
+                "booking_mechanic",
+                request.Mechanic.UserId,
+                BuildMechanicMessage(request),
+                cancellationToken);
+        }
+    }
+
+    private async Task EnsureConversationAsync(
+        ServiceRequest request,
+        string conversationType,
+        int partnerUserId,
+        string automatedMessage,
+        CancellationToken cancellationToken)
+    {
+        var customerUserId = request.Client!.UserId;
+        var conversationTime = conversationType == "booking_mechanic"
+            ? request.AcceptedAt ?? request.CreatedAt
+            : request.CreatedAt;
+        var existing = await db.Conversations
+            .Include(x => x.Participants)
+            .Include(x => x.Messages)
+            .FirstOrDefaultAsync(x =>
+                x.RequestId == request.RequestId &&
+                x.ConversationType == conversationType,
+                cancellationToken);
+        if (existing is not null)
+        {
+            var onlyMessage = existing.Messages.Count == 1 ? existing.Messages[0] : null;
+            if (onlyMessage is not null && IsAutomatedMessage(onlyMessage.MessageText))
+            {
+                onlyMessage.MessageText = automatedMessage;
+                onlyMessage.CreatedAt = conversationTime;
+                existing.CreatedAt = conversationTime;
+                existing.LastMessageAt = conversationTime;
+                await db.SaveChangesAsync(cancellationToken);
+            }
+
+            return;
+        }
+
+        var legacy = await db.Conversations
+            .Include(x => x.Participants)
+            .Include(x => x.Messages)
+            .FirstOrDefaultAsync(x =>
+                x.RequestId == request.RequestId &&
+                (x.ConversationType == "service_request" || x.ConversationType == "emergency_request") &&
+                x.Participants.Any(p => p.UserId == customerUserId) &&
+                x.Participants.Any(p => p.UserId == partnerUserId),
+                cancellationToken);
+        if (legacy is not null)
+        {
+            legacy.ConversationType = conversationType;
+            if (legacy.Messages.Count == 0)
+            {
+                AddAutomatedMessage(legacy, partnerUserId, automatedMessage);
+            }
+
+            await db.SaveChangesAsync(cancellationToken);
+            return;
+        }
+
+        var now = DateTime.UtcNow;
+        var conversation = new Conversation
+        {
+            RequestId = request.RequestId,
+            ConversationType = conversationType,
+            CreatedAt = conversationTime,
+            LastMessageAt = conversationTime,
+            Participants =
+            [
+                new ConversationParticipant { UserId = customerUserId, JoinedAt = now },
+                new ConversationParticipant { UserId = partnerUserId, JoinedAt = now }
+            ]
+        };
+        AddAutomatedMessage(conversation, partnerUserId, automatedMessage, conversationTime);
+        db.Conversations.Add(conversation);
+        await db.SaveChangesAsync(cancellationToken);
+    }
+
+    private static void AddAutomatedMessage(
+        Conversation conversation,
+        int senderUserId,
+        string text,
+        DateTime? createdAt = null)
+    {
+        var now = createdAt ?? DateTime.UtcNow;
+        conversation.LastMessageAt = now;
+        conversation.Messages.Add(new Message
+        {
+            SenderUserId = senderUserId,
+            MessageText = text,
+            CreatedAt = now
+        });
+    }
+
+    private static string BuildShopMessage(ServiceRequest request)
+    {
+        return
+            $"Booking BM-{request.RequestId:000000} received.\n\n" +
+            $"Service: {ServiceName(request)}\n" +
+            $"Schedule: {Schedule(request)}\n" +
+            $"Location: {request.ServiceLocationAddress ?? "To be confirmed"}\n" +
+            $"Concern: {request.IssueDescription}\n" +
+            $"Estimated total: PHP {request.EstimatedTotal:N0}\n\n" +
+            $"{request.Shop!.ShopName} will use this chat for service updates, pricing questions, and preparation details.";
+    }
+
+    private static string BuildMechanicMessage(ServiceRequest request)
+    {
+        var mechanicName = $"{request.Mechanic!.User!.FirstName} {request.Mechanic.User.LastName}".Trim();
+        return
+            $"Hi {request.Client!.User!.FirstName}, I’m {mechanicName}, the mechanic assigned to booking BM-{request.RequestId:000000}.\n\n" +
+            $"Service: {ServiceName(request)}\n" +
+            $"Schedule: {Schedule(request)}\n" +
+            $"Location: {request.ServiceLocationAddress ?? "To be confirmed"}\n" +
+            $"Current status: {FormatStatus(request.CurrentStatus?.StatusName)}\n\n" +
+            "Use this chat for arrival updates, location details, and repair questions.";
+    }
+
+    private static string ServiceName(ServiceRequest request)
+    {
+        return request.ShopService?.ServiceName ?? "Bike repair service";
+    }
+
+    private static string Schedule(ServiceRequest request)
+    {
+        return request.ScheduledAt?.ToString("MMM d, yyyy 'at' h:mm tt", CultureInfo.InvariantCulture)
+            ?? "To be confirmed";
+    }
+
+    private static bool IsAutomatedMessage(string text)
+    {
+        return text.StartsWith("Booking BM-", StringComparison.Ordinal) ||
+               (text.StartsWith("Hi ", StringComparison.Ordinal) &&
+                text.Contains("assigned to booking BM-", StringComparison.Ordinal));
+    }
+
+    private static string FormatStatus(string? status)
+    {
+        return string.IsNullOrWhiteSpace(status)
+            ? "Pending"
+            : CultureInfo.InvariantCulture.TextInfo.ToTitleCase(status.Replace("_", " "));
     }
 }
 

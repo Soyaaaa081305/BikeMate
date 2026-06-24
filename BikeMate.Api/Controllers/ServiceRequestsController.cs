@@ -18,6 +18,7 @@ namespace BikeMate.Api.Controllers;
 public sealed class ServiceRequestsController(
     BikeMateDbContext db,
     IServiceRequestService serviceRequestService,
+    IBookingConversationService bookingConversationService,
     IHubContext<BookingHub> bookingHub) : ControllerBase
 {
     [HttpPost]
@@ -25,6 +26,7 @@ public sealed class ServiceRequestsController(
     public async Task<ActionResult<ServiceRequestDto>> Create(CreateServiceRequestDto dto, CancellationToken cancellationToken)
     {
         var request = await serviceRequestService.CreateAsync(User.GetUserId(), dto, cancellationToken);
+        await bookingConversationService.SyncRequestAsync(request.RequestId, cancellationToken);
         await bookingHub.Clients.Group("admin-monitoring").SendAsync("ServiceRequestCreated", request, cancellationToken);
         return Ok(request);
     }
@@ -102,7 +104,10 @@ public sealed class ServiceRequestsController(
         var request = await db.ServiceRequests.SingleAsync(x => x.RequestId == id, cancellationToken);
         request.MechanicId = dto.MechanicId;
         await db.SaveChangesAsync(cancellationToken);
-        return await UpdateStatus(id, new UpdateRequestStatusDto("accepted", "Mechanic assigned."), cancellationToken);
+        var updated = await serviceRequestService.UpdateStatusAsync(id, "accepted", User.GetUserId(), "Mechanic assigned.", cancellationToken);
+        await bookingConversationService.SyncRequestAsync(id, cancellationToken);
+        await bookingHub.Clients.Group(BookingHub.GetRequestGroup(id)).SendAsync("ServiceStatusChanged", updated, cancellationToken);
+        return Ok(updated);
     }
 
     [HttpPost("{id:int}/media")]
@@ -159,6 +164,7 @@ public sealed class ServiceRequestsController(
 
         await db.SaveChangesAsync(cancellationToken);
         var updated = await serviceRequestService.UpdateStatusAsync(id, request.MechanicId is null ? "pending" : "accepted", userId, "Customer selected repair shop.", cancellationToken);
+        await bookingConversationService.SyncRequestAsync(id, cancellationToken);
         await bookingHub.Clients.Group(BookingHub.GetRequestGroup(id)).SendAsync("ServiceRequestAccepted", updated, cancellationToken);
         return Ok(updated);
     }

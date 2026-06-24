@@ -159,6 +159,13 @@ internal static class CustomerApiClient
         return await GetAsync<IReadOnlyList<MessageDto>>(http, $"conversations/{conversationId}/messages", cancellationToken);
     }
 
+    public static async Task MarkConversationReadAsync(int conversationId, CancellationToken cancellationToken = default)
+    {
+        using var http = await ApiConfig.CreateAuthorizedHttpClientAsync();
+        using var response = await http.PutAsync($"conversations/{conversationId}/read-all", null, cancellationToken);
+        await ReadAsync<object>(response, cancellationToken);
+    }
+
     public static async Task<UploadedFileDto> UploadFileAsync(FileResult file, string folder = "chat", CancellationToken cancellationToken = default)
     {
         using var http = await ApiConfig.CreateAuthorizedHttpClientAsync();
@@ -277,6 +284,7 @@ internal static class CustomerApiClient
 
     private static async Task<T> ReadAsync<T>(HttpResponseMessage response, CancellationToken cancellationToken)
     {
+        await ApiConfig.ThrowIfAuthenticationFailedAsync(response);
         if (!response.IsSuccessStatusCode)
         {
             var error = await response.Content.ReadAsStringAsync(cancellationToken);

@@ -19,6 +19,7 @@ public sealed class RiderController(
     BikeMateDbContext db,
     IServiceRequestService serviceRequestService,
     ILocationService locationService,
+    IBookingConversationService bookingConversationService,
     IHubContext<BookingHub> bookingHub,
     IHubContext<LocationHub> locationHub) : ControllerBase
 {
@@ -137,6 +138,7 @@ public sealed class RiderController(
         request.MechanicId = mechanicId;
         await db.SaveChangesAsync(cancellationToken);
         var dto = await serviceRequestService.UpdateStatusAsync(id, "accepted", User.GetUserId(), "Accepted by rider.", cancellationToken);
+        await bookingConversationService.SyncRequestAsync(id, cancellationToken);
         await bookingHub.Clients.Group(BookingHub.GetRequestGroup(id)).SendAsync("ServiceRequestAccepted", dto, cancellationToken);
         return Ok(dto);
     }

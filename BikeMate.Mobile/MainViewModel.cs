@@ -131,16 +131,38 @@ namespace BikeMate
                 {
                     Preferences.Default.Remove(AppNavigation.ForceLoginPreferenceKey);
                     ShowLogin();
-                    LoginStatus = "You have been signed out.";
+                    LoginStatus = Preferences.Default.Get(
+                        AppNavigation.LoginMessagePreferenceKey,
+                        "You have been signed out.");
+                    Preferences.Default.Remove(AppNavigation.LoginMessagePreferenceKey);
                     return;
                 }
 
                 var token = await SecureStorage.Default.GetAsync("access_token");
                 if (!string.IsNullOrWhiteSpace(token))
                 {
-                    var role = await SecureStorage.Default.GetAsync("primary_role");
-                    await AppNavigation.NavigateByRoleAsync(string.IsNullOrWhiteSpace(role) ? AppRoles.Customer : role);
-                    await PaymentReturnService.TryNavigateToCheckoutAsync();
+                    var sessionStatus = await ApiConfig.ValidateStoredSessionAsync();
+                    if (sessionStatus == StoredSessionStatus.Valid)
+                    {
+                        var role = await SecureStorage.Default.GetAsync("primary_role");
+                        await AppNavigation.NavigateByRoleAsync(string.IsNullOrWhiteSpace(role) ? AppRoles.Customer : role);
+                        await PaymentReturnService.TryNavigateToCheckoutAsync();
+                        return;
+                    }
+
+                    ShowLogin();
+                    if (sessionStatus == StoredSessionStatus.Rejected)
+                    {
+                        AppNavigation.ClearSavedSession("Your saved session expired. Please sign in again.");
+                        Preferences.Default.Remove(AppNavigation.ForceLoginPreferenceKey);
+                        Preferences.Default.Remove(AppNavigation.LoginMessagePreferenceKey);
+                        LoginStatus = "Your saved session expired. Please sign in again.";
+                    }
+                    else
+                    {
+                        LoginStatus = "BikeMate could not verify your saved session. Check the API connection, then sign in.";
+                    }
+
                     return;
                 }
             }

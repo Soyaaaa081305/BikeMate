@@ -17,6 +17,7 @@ namespace BikeMate.Api.Controllers;
 [Authorize]
 public sealed class EmergencyController(
     BikeMateDbContext db,
+    IBookingConversationService bookingConversationService,
     IHubContext<EmergencyHub> hubContext,
     IAgoraTokenService agoraTokenService) : ControllerBase
 {
@@ -113,7 +114,7 @@ public sealed class EmergencyController(
         request.AcceptedAt = DateTime.UtcNow;
 
         await SetStatusAsync(request, "accepted", userId, "Emergency request accepted by responder.", cancellationToken);
-        await EnsureConversationAsync(request, mechanic.UserId, cancellationToken);
+        await bookingConversationService.SyncRequestAsync(requestId, cancellationToken);
         db.Notifications.Add(new Notification
         {
             UserId = request.Client!.UserId,
@@ -313,27 +314,6 @@ public sealed class EmergencyController(
             .Take(5)
             .Select(x => x.Mechanic)
             .ToArray();
-    }
-
-    private async Task EnsureConversationAsync(ServiceRequest request, int mechanicUserId, CancellationToken cancellationToken)
-    {
-        var exists = await db.Conversations.AnyAsync(x => x.RequestId == request.RequestId, cancellationToken);
-        if (exists)
-        {
-            return;
-        }
-
-        db.Conversations.Add(new Conversation
-        {
-            RequestId = request.RequestId,
-            ConversationType = "emergency_request",
-            CreatedAt = DateTime.UtcNow,
-            Participants =
-            [
-                new ConversationParticipant { UserId = request.Client!.UserId, JoinedAt = DateTime.UtcNow },
-                new ConversationParticipant { UserId = mechanicUserId, JoinedAt = DateTime.UtcNow }
-            ]
-        });
     }
 
     private async Task SetStatusAsync(ServiceRequest request, string status, int? changedByUserId, string? notes, CancellationToken cancellationToken)

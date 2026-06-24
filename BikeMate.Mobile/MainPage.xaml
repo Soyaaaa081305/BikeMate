@@ -110,6 +110,8 @@
 
                 <Button Text="Continue with Google"
                         Command="{Binding GoogleLoginCommand}"
+                        ImageSource="google_logo.png"
+                        ContentLayout="Left,12"
                         TextColor="Black"
                         BackgroundColor="White"
                         BorderColor="LightGray"

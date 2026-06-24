@@ -7,6 +7,8 @@ namespace BikeMate.Helpers;
 public static class AppNavigation
 {
     public const string ForceLoginPreferenceKey = "bikemate_force_login_after_logout";
+    public const string LoginMessagePreferenceKey = "bikemate_login_message";
+    private static int _handlingUnauthorized;
 
     public static async Task NavigateByRoleAsync(string? role)
     {
@@ -45,12 +47,9 @@ public static class AppNavigation
         });
     }
 
-    public static async Task SignOutAsync()
+    public static async Task SignOutAsync(string? loginMessage = null)
     {
-        SecureStorage.Default.Remove("access_token");
-        SecureStorage.Default.Remove("primary_role");
-        SecureStorage.Default.Remove("user_id");
-        Preferences.Default.Set(ForceLoginPreferenceKey, true);
+        ClearSavedSession(loginMessage ?? "You have been signed out.");
 
         await MainThread.InvokeOnMainThreadAsync(async () =>
         {
@@ -65,6 +64,33 @@ public static class AppNavigation
                 await Shell.Current.GoToAsync("//MainPage");
             }
         });
+    }
+
+    public static void ClearSavedSession(string loginMessage)
+    {
+        SecureStorage.Default.Remove("access_token");
+        SecureStorage.Default.Remove("primary_role");
+        SecureStorage.Default.Remove("user_id");
+        Preferences.Default.Set(ForceLoginPreferenceKey, true);
+        Preferences.Default.Set(LoginMessagePreferenceKey, loginMessage);
+    }
+
+    public static async Task HandleUnauthorizedAsync()
+    {
+        if (Interlocked.CompareExchange(ref _handlingUnauthorized, 1, 0) != 0)
+        {
+            return;
+        }
+
+        try
+        {
+            await SignOutAsync("Your session expired. Please sign in again.");
+        }
+        finally
+        {
+            await Task.Delay(500);
+            Interlocked.Exchange(ref _handlingUnauthorized, 0);
+        }
     }
 
     public static string InferRoleFromEmail(string email)
