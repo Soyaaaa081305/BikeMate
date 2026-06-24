@@ -214,7 +214,7 @@ public sealed class AdminController(BikeMateDbContext db, IAdminReportService re
         return Ok(await db.Payments
             .Include(x => x.PaymentStatus)
             .OrderByDescending(x => x.CreatedAt)
-            .Select(x => new PaymentDto(x.PaymentId, x.RequestId, x.PaymentStatus!.StatusName, x.Amount, x.Currency, x.ProviderName, x.CheckoutUrl, x.ProviderReferenceNumber, x.CreatedAt, x.PaidAt))
+            .Select(x => x.ToDto())
             .ToArrayAsync(cancellationToken));
     }
 

@@ -1,6 +1,8 @@
+using System.Diagnostics;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using BikeMate.Core.DTOs;
+using BikeMate.Core.Helpers;
 using BikeMate.Helpers;
 using Microsoft.Maui.Storage;
 
@@ -29,8 +31,9 @@ internal static class CustomerApiClient
             await SecureStorage.Default.SetAsync("primary_role", role);
             return true;
         }
-        catch
+        catch (Exception ex)
         {
+            Debug.WriteLine($"Demo account login failed for {email}: {ex}");
             return false;
         }
     }
@@ -46,36 +49,6 @@ internal static class CustomerApiClient
         using var http = await ApiConfig.CreateAuthorizedHttpClientAsync();
         using var response = await http.PutAsJsonAsync("customers/me", dto, cancellationToken);
         await ReadAsync<object>(response, cancellationToken);
-    }
-
-    public static async Task UpdateCustomerProfileImageAsync(string imageUrl, CancellationToken cancellationToken = default)
-    {
-        using var http = await ApiConfig.CreateAuthorizedHttpClientAsync();
-        using var response = await http.PutAsJsonAsync(
-            "customers/me/profile-image",
-            new UploadMediaDto(imageUrl, "profile_photo", "Customer profile photo"),
-            cancellationToken);
-        await ReadAsync<object>(response, cancellationToken);
-    }
-
-    public static async Task UpdateCustomerValidIdAsync(string imageUrl, CancellationToken cancellationToken = default)
-    {
-        using var http = await ApiConfig.CreateAuthorizedHttpClientAsync();
-        using var response = await http.PutAsJsonAsync(
-            "customers/me/valid-id",
-            new UploadMediaDto(imageUrl, "valid_id", "Customer valid ID"),
-            cancellationToken);
-        await ReadAsync<object>(response, cancellationToken);
-    }
-
-    public static async Task DeleteCustomerAccountAsync(CancellationToken cancellationToken = default)
-    {
-        using var http = await ApiConfig.CreateAuthorizedHttpClientAsync();
-        using var response = await http.DeleteAsync("customers/me", cancellationToken);
-        if (!response.IsSuccessStatusCode)
-        {
-            await ReadAsync<object>(response, cancellationToken);
-        }
     }
 
     public static async Task<CustomerAddressDto> UpsertAddressAsync(CustomerAddressDto? existing, UpsertCustomerAddressDto dto, CancellationToken cancellationToken = default)
@@ -121,8 +94,9 @@ internal static class CustomerApiClient
             using var http = await ApiConfig.CreateAuthorizedHttpClientAsync();
             return await GetAsync<PaymentDto>(http, $"payments/request/{requestId}/latest", cancellationToken);
         }
-        catch
+        catch (Exception ex)
         {
+            Debug.WriteLine($"Failed to fetch latest payment for request {requestId}: {ex}");
             return null;
         }
     }
@@ -157,13 +131,6 @@ internal static class CustomerApiClient
     {
         using var http = await ApiConfig.CreateAuthorizedHttpClientAsync();
         return await GetAsync<IReadOnlyList<MessageDto>>(http, $"conversations/{conversationId}/messages", cancellationToken);
-    }
-
-    public static async Task MarkConversationReadAsync(int conversationId, CancellationToken cancellationToken = default)
-    {
-        using var http = await ApiConfig.CreateAuthorizedHttpClientAsync();
-        using var response = await http.PutAsync($"conversations/{conversationId}/read-all", null, cancellationToken);
-        await ReadAsync<object>(response, cancellationToken);
     }
 
     public static async Task<UploadedFileDto> UploadFileAsync(FileResult file, string folder = "chat", CancellationToken cancellationToken = default)
@@ -250,8 +217,9 @@ internal static class CustomerApiClient
             using var http = await ApiConfig.CreateAuthorizedHttpClientAsync();
             return await GetAsync<LiveLocationDto>(http, $"location/request/{requestId}/latest", cancellationToken);
         }
-        catch
+        catch (Exception ex)
         {
+            Debug.WriteLine($"Failed to fetch latest location for request {requestId}: {ex}");
             return null;
         }
     }
@@ -276,25 +244,14 @@ internal static class CustomerApiClient
         return await ReadAsync<ReviewDto>(response, cancellationToken);
     }
 
-    private static async Task<T> GetAsync<T>(HttpClient http, string endpoint, CancellationToken cancellationToken)
+    private static Task<T> GetAsync<T>(HttpClient http, string endpoint, CancellationToken cancellationToken)
     {
-        using var response = await http.GetAsync(endpoint, cancellationToken);
-        return await ReadAsync<T>(response, cancellationToken);
+        return ApiClientHelper.GetAsync<T>(http, endpoint, cancellationToken);
     }
 
-    private static async Task<T> ReadAsync<T>(HttpResponseMessage response, CancellationToken cancellationToken)
+    private static Task<T> ReadAsync<T>(HttpResponseMessage response, CancellationToken cancellationToken)
     {
-        await ApiConfig.ThrowIfAuthenticationFailedAsync(response);
-        if (!response.IsSuccessStatusCode)
-        {
-            var error = await response.Content.ReadAsStringAsync(cancellationToken);
-            throw new InvalidOperationException(string.IsNullOrWhiteSpace(error)
-                ? $"API request failed with {(int)response.StatusCode}."
-                : error);
-        }
-
-        return await response.Content.ReadFromJsonAsync<T>(cancellationToken)
-            ?? throw new InvalidOperationException("The API returned an empty response.");
+        return ApiClientHelper.ReadAsync<T>(response, cancellationToken);
     }
 
     private static string ContentTypeFor(FileResult file)
@@ -304,21 +261,7 @@ internal static class CustomerApiClient
             return file.ContentType;
         }
 
-        return Path.GetExtension(file.FileName).ToLowerInvariant() switch
-        {
-            ".jpg" or ".jpeg" => "image/jpeg",
-            ".png" => "image/png",
-            ".webp" => "image/webp",
-            ".pdf" => "application/pdf",
-            ".txt" => "text/plain",
-            ".doc" => "application/msword",
-            ".docx" => "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-            ".mp4" => "video/mp4",
-            ".webm" => "video/webm",
-            ".mov" => "video/quicktime",
-            ".3gp" => "video/3gpp",
-            _ => "application/octet-stream"
-        };
+        return ContentTypeHelper.GuessFromExtension(Path.GetExtension(file.FileName));
     }
 }
 
@@ -326,19 +269,10 @@ internal sealed record CustomerMeDto(
     int ClientId,
     int UserId,
     string FirstName,
-    string? MiddleName,
     string LastName,
     string Email,
     string? PhoneNumber,
     string? ProfileImageUrl,
-    bool EmailVerified,
-    bool PhoneVerified,
-    string AccountStatus,
-    DateTime CreatedAt,
-    DateTime? UpdatedAt,
-    string? Sex,
-    DateTime? Birthdate,
-    string? ValidIdImageUrl,
     IReadOnlyList<CustomerAddressDto> Addresses,
     IReadOnlyList<MotorcycleDto> Motorcycles);
 

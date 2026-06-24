@@ -302,8 +302,9 @@ namespace BikeMate
                 await Shell.Current.DisplayAlertAsync("Sign in failed", LoginStatus, "OK");
                 return;
             }
-            catch
+            catch (Exception ex)
             {
+                Debug.WriteLine($"Sign-in failed: {ex}");
                 LoginStatus = "Could not reach the BikeMate API. Start the API and try again.";
                 await Shell.Current.DisplayAlertAsync("Sign in unavailable", LoginStatus, "OK");
             }

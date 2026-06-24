@@ -14,6 +14,7 @@ using System.Text.RegularExpressions;
 using BikeMate.Core.Constants;
 using BikeMate.Core.DTOs;
 using BikeMate.Core.Entities;
+using BikeMate.Core.Helpers;
 using BikeMate.Infrastructure.Data;
 using Google.Apis.Auth;
 using Microsoft.AspNetCore.Hosting;
@@ -32,7 +33,8 @@ public sealed class JwtService(IConfiguration configuration) : IJwtService
 {
     public string GenerateToken(User user, IReadOnlyCollection<string> roles, DateTimeOffset expiresAt)
     {
-        var key = configuration["Jwt:Key"] ?? "CHANGE_THIS_TO_A_LONG_SECRET_KEY_CHANGE_ME";
+        var key = configuration["Jwt:Key"]
+            ?? throw new InvalidOperationException("Jwt:Key is not configured.");
         var issuer = configuration["Jwt:Issuer"] ?? "BikeMate";
         var audience = configuration["Jwt:Audience"] ?? "BikeMateMobile";
         var claims = new List<Claim>
@@ -203,7 +205,8 @@ public sealed class EmailService(
         if (!response.IsSuccessStatusCode)
         {
             var error = await response.Content.ReadAsStringAsync(cancellationToken);
-            logger.LogWarning("SendGrid rejected email to {Email}. Status: {Status}. Body: {Body}", toEmail, response.StatusCode, error);
+            logger.LogError("SendGrid rejected email to {Email}. Status: {Status}. Body: {Body}", toEmail, response.StatusCode, error);
+            throw new InvalidOperationException($"Email delivery failed (HTTP {(int)response.StatusCode}). Check the SendGrid API key and sender identity.");
         }
     }
 }
@@ -734,21 +737,7 @@ public sealed class FileStorageService(
 
     private static string GuessContentType(string extension)
     {
-        return extension.ToLowerInvariant() switch
-        {
-            ".jpg" or ".jpeg" => "image/jpeg",
-            ".png" => "image/png",
-            ".webp" => "image/webp",
-            ".pdf" => "application/pdf",
-            ".txt" => "text/plain",
-            ".doc" => "application/msword",
-            ".docx" => "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-            ".mp4" => "video/mp4",
-            ".webm" => "video/webm",
-            ".mov" => "video/quicktime",
-            ".3gp" => "video/3gpp",
-            _ => "application/octet-stream"
-        };
+        return ContentTypeHelper.GuessFromExtension(extension);
     }
 }
 

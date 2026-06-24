@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Net.Http.Json;
 using BikeMate.Core.DTOs;
 using BikeMate.Helpers;
@@ -225,8 +226,9 @@ public sealed class PasswordResetPage : CustomerPageBase, IQueryAttributable
             _step = 1;
             _banner = "If that email exists, a six-digit reset code was sent. It expires in 15 minutes.";
         }
-        catch
+        catch (Exception ex)
         {
+            Debug.WriteLine($"Forgot-password request failed: {ex}");
             _banner = "BikeMate could not reach the API. Start the API, then send the code again.";
         }
         finally
@@ -254,8 +256,9 @@ public sealed class PasswordResetPage : CustomerPageBase, IQueryAttributable
                 ? "A new reset code was sent if that email exists."
                 : await response.Content.ReadAsStringAsync();
         }
-        catch
+        catch (Exception ex)
         {
+            Debug.WriteLine($"Resend password-reset OTP failed: {ex}");
             _banner = "BikeMate could not reach the API. Check your connection and try again.";
         }
         finally
@@ -295,8 +298,9 @@ public sealed class PasswordResetPage : CustomerPageBase, IQueryAttributable
             _step = 2;
             _banner = "Code verified. Set a new password for your BikeMate account.";
         }
-        catch
+        catch (Exception ex)
         {
+            Debug.WriteLine($"Verify password-reset OTP failed: {ex}");
             _banner = "BikeMate could not reach the API. Check your connection and try again.";
         }
         finally
@@ -355,8 +359,9 @@ public sealed class PasswordResetPage : CustomerPageBase, IQueryAttributable
             _step = 3;
             _banner = null;
         }
-        catch
+        catch (Exception ex)
         {
+            Debug.WriteLine($"Password reset failed: {ex}");
             _banner = "BikeMate could not reach the API. Check your connection and try again.";
         }
         finally

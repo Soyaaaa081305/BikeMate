@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Globalization;
 using System.Windows.Input;
 using BikeMate.Core.DTOs;
@@ -3675,9 +3676,9 @@ internal static class CustomerPaymentGate
             {
                 payment = await CustomerApiClient.RefreshPaymentAsync(payment.PaymentId);
             }
-            catch
+            catch (Exception ex)
             {
-                // The payment screen will show the detailed refresh error and the secure checkout link.
+                Debug.WriteLine($"Payment refresh failed for payment {payment.PaymentId}: {ex}");
             }
         }
 

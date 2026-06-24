@@ -4,6 +4,7 @@ using BikeMate.Api.Services;
 using BikeMate.Core.Constants;
 using BikeMate.Core.DTOs;
 using BikeMate.Core.Entities;
+using BikeMate.Core.Helpers;
 using BikeMate.Infrastructure.Data;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -42,7 +43,7 @@ public sealed class RiderController(
 
         return Ok(new
         {
-            Profile = ToProfileDto(mechanic),
+            Profile = mechanic.ToProfileDto(),
             mechanic.AvailabilityStatus,
             ActiveJob = activeJob,
             IncomingRequests = incomingCount,
@@ -201,7 +202,7 @@ public sealed class RiderController(
             .Include(x => x.Request)
             .Where(x => x.PaymentStatusId == paidStatusId && x.Request!.MechanicId == mechanicId)
             .OrderByDescending(x => x.PaidAt ?? x.CreatedAt)
-            .Select(x => new PaymentDto(x.PaymentId, x.RequestId, "paid", x.Amount, x.Currency, x.ProviderName, x.CheckoutUrl, x.ProviderReferenceNumber, x.CreatedAt, x.PaidAt))
+            .Select(x => x.ToDto("paid"))
             .ToArrayAsync(cancellationToken);
 
         return Ok(new { Total = payments.Sum(x => x.Amount), Payments = payments });
@@ -224,7 +225,7 @@ public sealed class RiderController(
         mechanic.AvailabilityStatus = status;
         mechanic.UpdatedAt = DateTime.UtcNow;
         await db.SaveChangesAsync(cancellationToken);
-        return Ok(ToProfileDto(mechanic));
+        return Ok(mechanic.ToProfileDto());
     }
 
     private async Task<IActionResult> AddJobPhotoAsync(int requestId, string mediaType, UploadMediaDto dto, CancellationToken cancellationToken)
@@ -248,27 +249,14 @@ public sealed class RiderController(
         return Ok(new { message = "Job photo uploaded." });
     }
 
-    private async Task<int> GetMechanicIdAsync(CancellationToken cancellationToken)
+    private Task<int> GetMechanicIdAsync(CancellationToken cancellationToken)
     {
-        return await db.Mechanics.Where(x => x.UserId == User.GetUserId()).Select(x => x.MechanicId).SingleAsync(cancellationToken);
+        return db.GetMechanicIdAsync(User.GetUserId(), cancellationToken);
     }
 
-    private async Task<Mechanic> GetMechanicAsync(CancellationToken cancellationToken)
+    private Task<Mechanic> GetMechanicAsync(CancellationToken cancellationToken)
     {
-        return await db.Mechanics.Include(x => x.User).SingleAsync(x => x.UserId == User.GetUserId(), cancellationToken);
-    }
-
-    private static MechanicProfileDto ToProfileDto(Mechanic mechanic)
-    {
-        return new MechanicProfileDto(
-            mechanic.MechanicId,
-            mechanic.User!.FirstName + " " + mechanic.User.LastName,
-            mechanic.Bio,
-            mechanic.YearsExperience,
-            mechanic.IsVerified,
-            mechanic.AvailabilityStatus,
-            mechanic.AverageRating,
-            mechanic.TotalCompletedJobs);
+        return db.GetMechanicAsync(User.GetUserId(), cancellationToken);
     }
 
     private static IReadOnlyCollection<ServiceRequestDto> ToNearbyRequestDtos(IEnumerable<ServiceRequest> requests, Mechanic mechanic, decimal radiusKm)
@@ -280,7 +268,7 @@ public sealed class RiderController(
             {
                 Request = request,
                 Distance = mechanicHasLocation && request.ServiceLatitude is not null && request.ServiceLongitude is not null
-                    ? DistanceKm(mechanic.CurrentLatitude!.Value, mechanic.CurrentLongitude!.Value, request.ServiceLatitude.Value, request.ServiceLongitude.Value)
+                    ? GeoUtils.DistanceKm(mechanic.CurrentLatitude!.Value, mechanic.CurrentLongitude!.Value, request.ServiceLatitude.Value, request.ServiceLongitude.Value)
                     : (decimal?)null
             })
             .Where(x => !mechanicHasLocation || x.Distance is not null && x.Distance <= radiusKm)
@@ -313,22 +301,4 @@ public sealed class RiderController(
             distanceKm);
     }
 
-    private static decimal DistanceKm(decimal latitudeA, decimal longitudeA, decimal latitudeB, decimal longitudeB)
-    {
-        const double earthRadiusKm = 6371d;
-        var lat1 = ToRadians((double)latitudeA);
-        var lat2 = ToRadians((double)latitudeB);
-        var deltaLat = ToRadians((double)(latitudeB - latitudeA));
-        var deltaLng = ToRadians((double)(longitudeB - longitudeA));
-        var a = Math.Sin(deltaLat / 2) * Math.Sin(deltaLat / 2) +
-                Math.Cos(lat1) * Math.Cos(lat2) *
-                Math.Sin(deltaLng / 2) * Math.Sin(deltaLng / 2);
-        var c = 2 * Math.Atan2(Math.Sqrt(a), Math.Sqrt(1 - a));
-        return Math.Round((decimal)(earthRadiusKm * c), 2);
-    }
-
-    private static double ToRadians(double degrees)
-    {
-        return degrees * Math.PI / 180d;
-    }
 }
