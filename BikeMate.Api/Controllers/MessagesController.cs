@@ -38,7 +38,12 @@ public sealed class MessagesController(
             .ThenInclude(x => x!.User)
             .Include(x => x.Request)
             .ThenInclude(x => x!.CurrentStatus)
-            .Where(x => x.Participants.Any(p => p.UserId == userId))
+            .Where(x =>
+                x.Participants.Any(p => p.UserId == userId) &&
+                !(x.Request != null &&
+                  x.Request.IssueDescription.StartsWith("[EMERGENCY]") &&
+                  x.ConversationType != "emergency_support" &&
+                  x.ConversationType != "emergency_request"))
             .ToArrayAsync(cancellationToken);
 
         return Ok(conversations
@@ -140,17 +145,24 @@ public sealed class MessagesController(
     {
         var otherUser = conversation.Participants.FirstOrDefault(p => p.UserId != userId)?.User;
         var lastMessage = conversation.Messages.OrderByDescending(m => m.CreatedAt).FirstOrDefault();
+        var isEmergency = conversation.ConversationType is "emergency_support" or "emergency_request";
         var isShop = conversation.ConversationType == "booking_shop";
-        var isMechanic = conversation.ConversationType is "booking_mechanic" or "emergency_request";
-        var title = isShop
+        var isMechanic = conversation.ConversationType == "booking_mechanic";
+        var title = isEmergency
+            ? "BikeMate Emergency"
+            : isShop
             ? conversation.Request?.Shop?.ShopName
             : isMechanic
                 ? FullName(conversation.Request?.Mechanic?.User ?? otherUser)
                 : FullName(otherUser);
-        var partnerType = isShop ? "Shop" : isMechanic ? "Assigned mechanic" : "BikeMate contact";
+        var partnerType = isEmergency ? "Emergency support" : isShop ? "Shop" : isMechanic ? "Assigned mechanic" : "BikeMate contact";
         var service = conversation.Request?.ShopService?.ServiceName
             ?? conversation.Request?.IssueDescription
             ?? "Booking support";
+        if (isEmergency)
+        {
+            service = service.Replace("[EMERGENCY]", "", StringComparison.OrdinalIgnoreCase).Trim();
+        }
         var bookingReference = conversation.RequestId is null ? null : $"BM-{conversation.RequestId:000000}";
         var subtitle = bookingReference is null
             ? otherUser?.PhoneNumber ?? otherUser?.Email
@@ -181,6 +193,7 @@ public sealed class MessagesController(
         var onlyMessage = conversation.Messages.Count == 1 ? conversation.Messages[0] : null;
         var isAutomatedOnly = onlyMessage is not null &&
             (onlyMessage.MessageText.StartsWith("Booking BM-", StringComparison.Ordinal) ||
+             onlyMessage.MessageText.StartsWith("BikeMate Emergency received", StringComparison.Ordinal) ||
              onlyMessage.MessageText.StartsWith("Hi ", StringComparison.Ordinal));
         return isAutomatedOnly
             ? conversation.Request?.CreatedAt ?? conversation.CreatedAt

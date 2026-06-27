@@ -20,10 +20,9 @@ namespace BikeMate
         private int _currentPosition;
         private bool _isStartupVisible = true;
         private bool _isOnboardingVisible;
-        private bool _isPaywallVisible = false;
         private bool _isLoginVisible = false;
-        private string _email = "customer@bikemate.test";
-        private string _password = "Password123!";
+        private string _email = "";
+        private string _password = "";
         private string _loginStatus = "Checking saved session...";
 
         public ObservableCollection<OnboardingItem> BoardingItems { get; set; }
@@ -56,12 +55,6 @@ namespace BikeMate
             set { _isOnboardingVisible = value; OnPropertyChanged(); }
         }
 
-        public bool IsPaywallVisible
-        {
-            get => _isPaywallVisible;
-            set { _isPaywallVisible = value; OnPropertyChanged(); }
-        }
-
         public bool IsLoginVisible
         {
             get => _isLoginVisible;
@@ -86,12 +79,8 @@ namespace BikeMate
             set { _loginStatus = value; OnPropertyChanged(); }
         }
 
-        // All Commands declared here
         public ICommand NextCommand { get; }
         public ICommand SkipOnboardingCommand { get; }
-        public ICommand SelectDemoRoleCommand { get; }
-        public ICommand ClosePaywallCommand { get; }
-        public ICommand StartTrialCommand { get; }
         public ICommand SignInCommand { get; }
         public ICommand CreateAccountCommand { get; }
         public ICommand ForgotPasswordCommand { get; }
@@ -101,18 +90,38 @@ namespace BikeMate
         {
             BoardingItems = new ObservableCollection<OnboardingItem>
             {
-                new OnboardingItem { Title = "BikeMate", Description = "Need a fix? Our expert bike techs come to you, whether you're at home, at work, or out riding. Get fast, reliable service on demand.", ImageSource = "bikemate_logo.png", ButtonText = "Let's Go!" },
-                new OnboardingItem { Title = "Get your bike fixed in minutes", Description = "From flat tires to tune-ups, BikeMate lets you book a repair anytime, anywhere. Just tell us what's wrong—we'll handle the rest.", ImageSource = "bike_wrench.png", ButtonText = "Continue" },
-                new OnboardingItem { Title = "No more shop visits", Description = "Our trusted mechanics come to you. Whether you're at home or on the road, we fix your bike on-site or bring it to our shop—no need to wait in line.", ImageSource = "mechanic_door.png", ButtonText = "Continue" },
-                new OnboardingItem { Title = "Quick turnaround, no hassle", Description = "We promise speed and quality. Your bike is repaired and returned fast—like it never had a problem.", ImageSource = "running_man.png", ButtonText = "Start" }
+                new OnboardingItem
+                {
+                    Title = "BikeMate",
+                    Description = "Book trusted motorcycle repair and roadside support from one place.",
+                    ImageSource = "bikemate_logo.png",
+                    ButtonText = "Continue"
+                },
+                new OnboardingItem
+                {
+                    Title = "Describe your concern",
+                    Description = "Select your motorcycle, repair concern, service location, and preferred schedule.",
+                    ImageSource = "bike_wrench.png",
+                    ButtonText = "Continue"
+                },
+                new OnboardingItem
+                {
+                    Title = "Compare repair shops",
+                    Description = "Review verified shops, available services, technicians, prices, and ratings before payment.",
+                    ImageSource = "mechanic_door.png",
+                    ButtonText = "Continue"
+                },
+                new OnboardingItem
+                {
+                    Title = "Track every step",
+                    Description = "Message your service partners, follow repair progress, keep receipts, and review completed work.",
+                    ImageSource = "running_man.png",
+                    ButtonText = "Get started"
+                }
             };
 
-            // All Commands instantiated inside the constructor
             NextCommand = new Command(GoToNextSlide);
             SkipOnboardingCommand = new Command(ShowLogin);
-            SelectDemoRoleCommand = new Command<string>(async role => await OpenDemoRoleAsync(role));
-            ClosePaywallCommand = new Command(() => { IsPaywallVisible = false; IsLoginVisible = true; });
-            StartTrialCommand = new Command(() => { IsPaywallVisible = false; IsLoginVisible = true; });
 
             SignInCommand = new Command(async () => await SignInAsync());
             CreateAccountCommand = new Command(async () => await OpenCreateAccountAsync());
@@ -173,9 +182,8 @@ namespace BikeMate
 
             IsStartupVisible = false;
             IsOnboardingVisible = true;
-            IsPaywallVisible = false;
             IsLoginVisible = false;
-            LoginStatus = "Sign in with your BikeMate account or a seeded test account.";
+            LoginStatus = "";
         }
 
         private void GoToNextSlide()
@@ -194,38 +202,11 @@ namespace BikeMate
         {
             IsStartupVisible = false;
             IsOnboardingVisible = false;
-            IsPaywallVisible = false;
             IsLoginVisible = true;
-        }
-
-        private async Task OpenDemoRoleAsync(string? role)
-        {
-            var selectedRole = role switch
+            if (LoginStatus == "Checking saved session...")
             {
-                AppRoles.Mechanic => AppRoles.Mechanic,
-                AppRoles.ShopAdmin => AppRoles.ShopAdmin,
-                AppRoles.SystemAdmin => AppRoles.SystemAdmin,
-                _ => AppRoles.Customer
-            };
-
-            Email = selectedRole switch
-            {
-                AppRoles.Mechanic => "mechanic@bikemate.test",
-                AppRoles.ShopAdmin => "shop@bikemate.test",
-                AppRoles.SystemAdmin => "admin@bikemate.test",
-                _ => "customer@bikemate.test"
-            };
-            Password = "Password123!";
-
-            var signedIn = await CustomerApiClient.TryLoginDemoAccountAsync(Email, selectedRole);
-            if (!signedIn)
-            {
-                LoginStatus = "Could not sign in to the seeded account. Start the BikeMate API and database, then try again.";
-                await Shell.Current.DisplayAlertAsync("Sign in unavailable", LoginStatus, "OK");
-                return;
+                LoginStatus = "";
             }
-
-            await AppNavigation.NavigateByRoleAsync(selectedRole);
         }
 
         private async Task OpenCreateAccountAsync()

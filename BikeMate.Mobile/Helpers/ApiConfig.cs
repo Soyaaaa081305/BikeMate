@@ -17,7 +17,7 @@ public static class ApiConfig
 {
     public const string BaseUrl =
 #if ANDROID
-        "https://10.0.2.2:5001/api/";
+        "https://hungrily-imagines-suffering.ngrok-free.dev/api/";
 #else
         "https://localhost:5001/api/";
 #endif

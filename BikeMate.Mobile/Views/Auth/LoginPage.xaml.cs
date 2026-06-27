@@ -11,8 +11,7 @@ public partial class LoginPage : ContentPage
     public LoginPage()
     {
         InitializeComponent();
-        EmailEntry.Text = "customer@bikemate.test";
-        PasswordEntry.Text = "Password123!";
+        AppVisualPolish.Apply((View)Content);
     }
 
     private async void OnSignInClicked(object? sender, EventArgs e)
@@ -47,6 +46,17 @@ public partial class LoginPage : ContentPage
     private async void OnCreateAccountClicked(object? sender, EventArgs e)
     {
         await Shell.Current.GoToAsync(nameof(RegisterPage));
+    }
+
+    private async void OnForgotPasswordClicked(object? sender, EventArgs e)
+    {
+        var email = Uri.EscapeDataString(EmailEntry.Text?.Trim() ?? string.Empty);
+        await Shell.Current.GoToAsync($"{nameof(PasswordResetPage)}?email={email}");
+    }
+
+    private async void OnPasswordCompleted(object? sender, EventArgs e)
+    {
+        await SignInAsync();
     }
 
     private async Task SignInAsync()

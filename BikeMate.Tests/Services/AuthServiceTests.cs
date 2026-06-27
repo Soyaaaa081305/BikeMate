@@ -48,7 +48,7 @@ public sealed class AuthServiceTests : IDisposable
     [Fact]
     public async Task RegisterAsync_CreatesUserWithCorrectData()
     {
-        var dto = new RegisterRequestDto("Jane", "Smith", "jane@test.com", "Pass123!", "Pass123!", "09171234567", "Customer");
+        var dto = new RegisterRequestDto("Jane", "Smith", "jane@test.com", "Pass1234!", "Pass1234!", "09171234567", "Customer");
 
         var result = await _sut.RegisterAsync(dto, CancellationToken.None);
 
@@ -62,7 +62,7 @@ public sealed class AuthServiceTests : IDisposable
     [Fact]
     public async Task RegisterAsync_ThrowsWhenPasswordsDoNotMatch()
     {
-        var dto = new RegisterRequestDto("Jane", "Smith", "jane@test.com", "Pass123!", "DifferentPass!", null, "Customer");
+        var dto = new RegisterRequestDto("Jane", "Smith", "jane@test.com", "Pass1234!", "DifferentPass!", null, "Customer");
 
         var ex = await Assert.ThrowsAsync<InvalidOperationException>(
             () => _sut.RegisterAsync(dto, CancellationToken.None));
@@ -72,7 +72,7 @@ public sealed class AuthServiceTests : IDisposable
     [Fact]
     public async Task RegisterAsync_ThrowsForInvalidRole()
     {
-        var dto = new RegisterRequestDto("Jane", "Smith", "jane@test.com", "Pass123!", "Pass123!", null, "InvalidRole");
+        var dto = new RegisterRequestDto("Jane", "Smith", "jane@test.com", "Pass1234!", "Pass1234!", null, "InvalidRole");
 
         var ex = await Assert.ThrowsAsync<InvalidOperationException>(
             () => _sut.RegisterAsync(dto, CancellationToken.None));
@@ -82,7 +82,7 @@ public sealed class AuthServiceTests : IDisposable
     [Fact]
     public async Task RegisterAsync_ThrowsWhenEmailAlreadyRegistered()
     {
-        var dto = new RegisterRequestDto("Jane", "Smith", "dupe@test.com", "Pass123!", "Pass123!", null, "Customer");
+        var dto = new RegisterRequestDto("Jane", "Smith", "dupe@test.com", "Pass1234!", "Pass1234!", null, "Customer");
         await _sut.RegisterAsync(dto, CancellationToken.None);
 
         var ex = await Assert.ThrowsAsync<InvalidOperationException>(
@@ -93,7 +93,7 @@ public sealed class AuthServiceTests : IDisposable
     [Fact]
     public async Task RegisterAsync_NormalizesEmail()
     {
-        var dto = new RegisterRequestDto("Jane", "Smith", " UPPER@TEST.COM  ", "Pass123!", "Pass123!", null, "Customer");
+        var dto = new RegisterRequestDto("Jane", "Smith", " UPPER@TEST.COM  ", "Pass1234!", "Pass1234!", null, "Customer");
 
         var result = await _sut.RegisterAsync(dto, CancellationToken.None);
 
@@ -103,7 +103,7 @@ public sealed class AuthServiceTests : IDisposable
     [Fact]
     public async Task RegisterAsync_CreatesClientProfileForCustomerRole()
     {
-        var dto = new RegisterRequestDto("Jane", "Smith", "customer@test.com", "Pass123!", "Pass123!", null, "Customer");
+        var dto = new RegisterRequestDto("Jane", "Smith", "customer@test.com", "Pass1234!", "Pass1234!", null, "Customer");
 
         await _sut.RegisterAsync(dto, CancellationToken.None);
 
@@ -114,7 +114,7 @@ public sealed class AuthServiceTests : IDisposable
     [Fact]
     public async Task RegisterAsync_CreatesMechanicProfileForMechanicRole()
     {
-        var dto = new RegisterRequestDto("Mike", "Mech", "mechanic@test.com", "Pass123!", "Pass123!", null, "Mechanic");
+        var dto = new RegisterRequestDto("Mike", "Mech", "mechanic@test.com", "Pass1234!", "Pass1234!", null, "Mechanic");
 
         await _sut.RegisterAsync(dto, CancellationToken.None);
 
@@ -126,10 +126,10 @@ public sealed class AuthServiceTests : IDisposable
     [Fact]
     public async Task LoginAsync_ReturnsTokenForValidCredentials()
     {
-        var registerDto = new RegisterRequestDto("Jane", "Smith", "login@test.com", "Pass123!", "Pass123!", null, "Customer");
+        var registerDto = new RegisterRequestDto("Jane", "Smith", "login@test.com", "Pass1234!", "Pass1234!", null, "Customer");
         await _sut.RegisterAsync(registerDto, CancellationToken.None);
 
-        var loginDto = new LoginRequestDto("login@test.com", "Pass123!");
+        var loginDto = new LoginRequestDto("login@test.com", "Pass1234!");
         var result = await _sut.LoginAsync(loginDto, CancellationToken.None);
 
         Assert.NotNull(result);
@@ -139,7 +139,7 @@ public sealed class AuthServiceTests : IDisposable
     [Fact]
     public async Task LoginAsync_ThrowsForInvalidPassword()
     {
-        var registerDto = new RegisterRequestDto("Jane", "Smith", "login2@test.com", "Pass123!", "Pass123!", null, "Customer");
+        var registerDto = new RegisterRequestDto("Jane", "Smith", "login2@test.com", "Pass1234!", "Pass1234!", null, "Customer");
         await _sut.RegisterAsync(registerDto, CancellationToken.None);
 
         var loginDto = new LoginRequestDto("login2@test.com", "WrongPassword!");
@@ -151,7 +151,7 @@ public sealed class AuthServiceTests : IDisposable
     [Fact]
     public async Task LoginAsync_ThrowsForNonExistentUser()
     {
-        var loginDto = new LoginRequestDto("ghost@test.com", "Pass123!");
+        var loginDto = new LoginRequestDto("ghost@test.com", "Pass1234!");
 
         var ex = await Assert.ThrowsAsync<InvalidOperationException>(
             () => _sut.LoginAsync(loginDto, CancellationToken.None));
@@ -161,14 +161,14 @@ public sealed class AuthServiceTests : IDisposable
     [Fact]
     public async Task LoginAsync_ThrowsForSuspendedAccount()
     {
-        var registerDto = new RegisterRequestDto("Jane", "Smith", "suspended@test.com", "Pass123!", "Pass123!", null, "Customer");
+        var registerDto = new RegisterRequestDto("Jane", "Smith", "suspended@test.com", "Pass1234!", "Pass1234!", null, "Customer");
         await _sut.RegisterAsync(registerDto, CancellationToken.None);
 
         var user = await _db.Users.SingleAsync(u => u.Email == "suspended@test.com");
         user.AccountStatus = "suspended";
         await _db.SaveChangesAsync();
 
-        var loginDto = new LoginRequestDto("suspended@test.com", "Pass123!");
+        var loginDto = new LoginRequestDto("suspended@test.com", "Pass1234!");
         var ex = await Assert.ThrowsAsync<InvalidOperationException>(
             () => _sut.LoginAsync(loginDto, CancellationToken.None));
         Assert.Contains("not active", ex.Message);
@@ -177,7 +177,7 @@ public sealed class AuthServiceTests : IDisposable
     [Fact]
     public async Task GetMeAsync_ReturnsUserProfile()
     {
-        var registerDto = new RegisterRequestDto("Get", "Me", "getme@test.com", "Pass123!", "Pass123!", null, "Customer");
+        var registerDto = new RegisterRequestDto("Get", "Me", "getme@test.com", "Pass1234!", "Pass1234!", null, "Customer");
         await _sut.RegisterAsync(registerDto, CancellationToken.None);
         var user = await _db.Users.SingleAsync(u => u.Email == "getme@test.com");
 
@@ -191,12 +191,69 @@ public sealed class AuthServiceTests : IDisposable
     [Fact]
     public async Task RegisterAsync_SendsOtpEmail()
     {
-        var dto = new RegisterRequestDto("Jane", "Smith", "otp@test.com", "Pass123!", "Pass123!", null, "Customer");
+        var dto = new RegisterRequestDto("Jane", "Smith", "otp@test.com", "Pass1234!", "Pass1234!", null, "Customer");
 
         await _sut.RegisterAsync(dto, CancellationToken.None);
 
         _emailService.Verify(
             e => e.SendOtpAsync(It.IsAny<User>(), It.IsAny<string>(), "email_verification", It.IsAny<CancellationToken>()),
             Times.Once);
+    }
+
+    [Fact]
+    public async Task RegisterAsync_ReleasesEmailAndPhoneFromDeletedAccount()
+    {
+        var deleted = new User
+        {
+            FirstName = "Old",
+            LastName = "Account",
+            Email = "reuse@test.com",
+            PhoneNumber = "+639171234567",
+            PasswordHash = "old-hash",
+            AccountStatus = "deleted",
+            CreatedAt = DateTime.UtcNow.AddDays(-30),
+            AuthProviders =
+            [
+                new UserAuthProvider
+                {
+                    ProviderName = "google",
+                    ProviderSubject = "old-google-subject",
+                    ProviderEmail = "reuse@test.com",
+                    CreatedAt = DateTime.UtcNow.AddDays(-30)
+                }
+            ]
+        };
+        _db.Users.Add(deleted);
+        await _db.SaveChangesAsync();
+
+        var result = await _sut.RegisterAsync(
+            new RegisterRequestDto(
+                "New",
+                "Account",
+                "reuse@test.com",
+                "Password123!",
+                "Password123!",
+                "09171234567",
+                AppRoles.Customer),
+            CancellationToken.None);
+
+        var users = await _db.Users
+            .Include(x => x.AuthProviders)
+            .OrderBy(x => x.UserId)
+            .ToArrayAsync();
+        var archived = users.Single(x => x.UserId == deleted.UserId);
+        var replacement = users.Single(x => x.Email == "reuse@test.com");
+
+        Assert.Equal("deleted", archived.AccountStatus);
+        Assert.StartsWith("deleted-", archived.Email);
+        Assert.Null(archived.PhoneNumber);
+        Assert.Null(archived.PasswordHash);
+        Assert.All(archived.AuthProviders, provider =>
+        {
+            Assert.Null(provider.ProviderSubject);
+            Assert.Null(provider.ProviderEmail);
+        });
+        Assert.Equal(replacement.UserId, result.User.UserId);
+        Assert.Equal("+639171234567", replacement.PhoneNumber);
     }
 }

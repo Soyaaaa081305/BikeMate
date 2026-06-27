@@ -82,8 +82,8 @@ public static class PaymentReturnService
     public static string FormatBanner(PaymentReturnInfo info)
     {
         return string.Equals(info.Status, "success", StringComparison.OrdinalIgnoreCase)
-            ? "Returned from PayMongo. BikeMate is waiting for PayMongo confirmation before marking this paid."
-            : "PayMongo checkout was cancelled. You can continue payment anytime.";
+            ? "Checkout completed. BikeMate is verifying the payment with PayMongo now."
+            : "Checkout was cancelled. No confirmed payment was recorded, and you can try again when ready.";
     }
 
     public static async Task TryNavigateToCheckoutAsync()

@@ -291,6 +291,12 @@ public sealed class AuthService(
 
         var normalizedEmail = NormalizeEmail(dto.Email);
         var normalizedPhone = NormalizePhilippineMobile(dto.PhoneNumber);
+        await DeletedAccountIdentity.ReleaseConflictsAsync(
+            db,
+            normalizedEmail,
+            normalizedPhone,
+            cancellationToken);
+
         if (await db.Users.AnyAsync(x => x.Email == normalizedEmail, cancellationToken))
         {
             throw new InvalidOperationException("Email is already registered.");
@@ -347,12 +353,26 @@ public sealed class AuthService(
     public async Task<AuthResponseDto> GoogleLoginAsync(GoogleLoginRequestDto dto, CancellationToken cancellationToken)
     {
         var googleUser = await googleAuthService.ValidateAsync(dto.IdToken, cancellationToken);
+        var normalizedEmail = NormalizeEmail(googleUser.Email);
         var user = await db.Users
             .Include(x => x.UserRoles)
             .ThenInclude(x => x.Role)
             .Include(x => x.AuthProviders)
+            .Include(x => x.DeviceTokens)
             .SingleOrDefaultAsync(x => x.AuthProviders.Any(p => p.ProviderName == "google" && p.ProviderSubject == googleUser.Subject)
-                || x.Email == googleUser.Email.ToLower(), cancellationToken);
+                || x.Email == normalizedEmail, cancellationToken);
+
+        if (user?.AccountStatus == "deleted")
+        {
+            DeletedAccountIdentity.Anonymize(user);
+            await db.SaveChangesAsync(cancellationToken);
+            user = null;
+        }
+
+        if (user?.AccountStatus is "suspended" or "rejected")
+        {
+            throw new InvalidOperationException("This account is not active.");
+        }
 
         if (user is null)
         {
@@ -362,7 +382,7 @@ public sealed class AuthService(
             {
                 FirstName = googleUser.FirstName,
                 LastName = googleUser.LastName,
-                Email = googleUser.Email.ToLowerInvariant(),
+                Email = normalizedEmail,
                 EmailVerified = true,
                 AccountStatus = "active",
                 CreatedAt = DateTime.UtcNow,
@@ -371,6 +391,26 @@ public sealed class AuthService(
             };
             db.Users.Add(user);
             AddRoleProfile(user, roleName);
+            await db.SaveChangesAsync(cancellationToken);
+        }
+        else if (!user.AuthProviders.Any(x =>
+                     x.ProviderName == "google" &&
+                     x.ProviderSubject == googleUser.Subject))
+        {
+            user.AuthProviders.Add(new UserAuthProvider
+            {
+                ProviderName = "google",
+                ProviderSubject = googleUser.Subject,
+                ProviderEmail = normalizedEmail,
+                CreatedAt = DateTime.UtcNow
+            });
+            user.EmailVerified = true;
+            if (user.AccountStatus == "pending")
+            {
+                user.AccountStatus = "active";
+            }
+
+            user.UpdatedAt = DateTime.UtcNow;
             await db.SaveChangesAsync(cancellationToken);
         }
 
@@ -717,15 +757,28 @@ public sealed class FileStorageService(
     private string UploadBaseUrl()
     {
         var configured = configuration["Storage:BaseUrl"];
-        if (!string.IsNullOrWhiteSpace(configured))
+        var request = httpContextAccessor.HttpContext?.Request;
+        if (!string.IsNullOrWhiteSpace(configured) &&
+            (!IsLoopbackUrl(configured) || request is null || IsLoopbackHost(request.Host.Host)))
         {
             return configured;
         }
 
-        var request = httpContextAccessor.HttpContext?.Request;
         return request is null
             ? "https://localhost:5001/uploads"
             : $"{request.Scheme}://{request.Host}/uploads";
+    }
+
+    private static bool IsLoopbackUrl(string value)
+    {
+        return Uri.TryCreate(value, UriKind.Absolute, out var uri) && IsLoopbackHost(uri.Host);
+    }
+
+    private static bool IsLoopbackHost(string host)
+    {
+        return string.Equals(host, "localhost", StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(host, "127.0.0.1", StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(host, "::1", StringComparison.OrdinalIgnoreCase);
     }
 
     private static string SanitizePathSegment(string? value)
@@ -885,6 +938,7 @@ public interface IBookingConversationService
 {
     Task SyncForUserAsync(int userId, CancellationToken cancellationToken);
     Task SyncRequestAsync(int requestId, CancellationToken cancellationToken);
+    Task<int?> EnsureEmergencySupportConversationAsync(int requestId, CancellationToken cancellationToken);
 }
 
 public sealed class BookingConversationService(BikeMateDbContext db) : IBookingConversationService
@@ -921,6 +975,12 @@ public sealed class BookingConversationService(BikeMateDbContext db) : IBookingC
             return;
         }
 
+        if (IsEmergencyRequest(request))
+        {
+            await EnsureEmergencySupportConversationAsync(requestId, cancellationToken);
+            return;
+        }
+
         if (request.Shop?.Owner is not null)
         {
             await EnsureConversationAsync(
@@ -940,6 +1000,99 @@ public sealed class BookingConversationService(BikeMateDbContext db) : IBookingC
                 BuildMechanicMessage(request),
                 cancellationToken);
         }
+    }
+
+    public async Task<int?> EnsureEmergencySupportConversationAsync(int requestId, CancellationToken cancellationToken)
+    {
+        var request = await db.ServiceRequests
+            .Include(x => x.Client).ThenInclude(x => x!.User)
+            .Include(x => x.Mechanic).ThenInclude(x => x!.User)
+            .SingleOrDefaultAsync(x => x.RequestId == requestId, cancellationToken);
+        if (request?.Client?.User is null)
+        {
+            return null;
+        }
+
+        var supportUserId = await db.UserRoles
+            .Where(x => x.Role!.RoleName == AppRoles.SystemAdmin)
+            .OrderBy(x => x.UserId)
+            .Select(x => (int?)x.UserId)
+            .FirstOrDefaultAsync(cancellationToken);
+        if (supportUserId is null)
+        {
+            return null;
+        }
+
+        var conversation = await db.Conversations
+            .Include(x => x.Participants)
+            .Include(x => x.Messages)
+            .OrderByDescending(x => x.ConversationType == "emergency_support")
+            .FirstOrDefaultAsync(x =>
+                x.RequestId == requestId &&
+                (x.ConversationType == "emergency_support" ||
+                 x.ConversationType == "emergency_request"),
+                cancellationToken);
+
+        if (conversation is null)
+        {
+            conversation = new Conversation
+            {
+                RequestId = requestId,
+                ConversationType = "emergency_support",
+                CreatedAt = request.CreatedAt,
+                LastMessageAt = request.CreatedAt,
+                Participants =
+                [
+                    new ConversationParticipant { UserId = request.Client.UserId, JoinedAt = request.CreatedAt },
+                    new ConversationParticipant { UserId = supportUserId.Value, JoinedAt = request.CreatedAt }
+                ]
+            };
+            AddAutomatedMessage(
+                conversation,
+                supportUserId.Value,
+                BuildEmergencySupportMessage(request),
+                request.CreatedAt);
+            db.Conversations.Add(conversation);
+        }
+        else
+        {
+            conversation.ConversationType = "emergency_support";
+        }
+
+        if (conversation.Participants.All(x => x.UserId != request.Client.UserId))
+        {
+            conversation.Participants.Add(new ConversationParticipant
+            {
+                UserId = request.Client.UserId,
+                JoinedAt = DateTime.UtcNow
+            });
+        }
+
+        if (conversation.Participants.All(x => x.UserId != supportUserId.Value))
+        {
+            conversation.Participants.Add(new ConversationParticipant
+            {
+                UserId = supportUserId.Value,
+                JoinedAt = DateTime.UtcNow
+            });
+        }
+
+        if (request.Mechanic?.User is not null &&
+            conversation.Participants.All(x => x.UserId != request.Mechanic.UserId))
+        {
+            conversation.Participants.Add(new ConversationParticipant
+            {
+                UserId = request.Mechanic.UserId,
+                JoinedAt = DateTime.UtcNow
+            });
+            AddAutomatedMessage(
+                conversation,
+                supportUserId.Value,
+                $"{request.Mechanic.User.FirstName} {request.Mechanic.User.LastName} has joined as your assigned roadside responder.");
+        }
+
+        await db.SaveChangesAsync(cancellationToken);
+        return conversation.ConversationId;
     }
 
     private async Task EnsureConversationAsync(
@@ -1054,6 +1207,24 @@ public sealed class BookingConversationService(BikeMateDbContext db) : IBookingC
             "Use this chat for arrival updates, location details, and repair questions.";
     }
 
+    private static string BuildEmergencySupportMessage(ServiceRequest request)
+    {
+        var concern = request.IssueDescription
+            .Replace("[EMERGENCY]", "", StringComparison.OrdinalIgnoreCase)
+            .Trim();
+        return
+            $"BikeMate Emergency received roadside request BM-{request.RequestId:000000}.\n\n" +
+            $"Location: {request.ServiceLocationAddress ?? "Current location"}\n" +
+            $"Concern: {(string.IsNullOrWhiteSpace(concern) ? "Roadside assistance needed." : concern)}\n\n" +
+            "No payment is required to request or track emergency help. Use this chat for safety updates, landmarks, and responder coordination.";
+    }
+
+    private static bool IsEmergencyRequest(ServiceRequest request)
+    {
+        return request.IssueDescription.StartsWith("[EMERGENCY]", StringComparison.OrdinalIgnoreCase) ||
+               request.CurrentStatus?.StatusName is "emergency_pending" or "searching_responder" or "call_connecting" or "call_connected";
+    }
+
     private static string ServiceName(ServiceRequest request)
     {
         return request.ShopService?.ServiceName ?? "Bike repair service";
@@ -1068,6 +1239,7 @@ public sealed class BookingConversationService(BikeMateDbContext db) : IBookingC
     private static bool IsAutomatedMessage(string text)
     {
         return text.StartsWith("Booking BM-", StringComparison.Ordinal) ||
+               text.StartsWith("BikeMate Emergency received", StringComparison.Ordinal) ||
                (text.StartsWith("Hi ", StringComparison.Ordinal) &&
                 text.Contains("assigned to booking BM-", StringComparison.Ordinal));
     }
@@ -1553,6 +1725,11 @@ public sealed class PaymentService(BikeMateDbContext db, IPayMongoService payMon
         if (request.Client!.UserId != userId)
         {
             throw new UnauthorizedAccessException("You can only pay for your own request.");
+        }
+
+        if (request.IssueDescription.StartsWith("[EMERGENCY]", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException("Emergency roadside help does not require checkout.");
         }
 
         if (request.ShopId is null || request.ShopServiceId is null || request.ShopService is null)

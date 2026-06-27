@@ -111,7 +111,7 @@ public sealed class JwtServiceTests
     }
 
     [Fact]
-    public void GenerateToken_UsesDefaultKeyWhenConfigMissing()
+    public void GenerateToken_ThrowsWhenKeyIsMissing()
     {
         var config = new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?>())
@@ -119,9 +119,10 @@ public sealed class JwtServiceTests
         var sut = new JwtService(config);
         var user = CreateUser();
 
-        var token = sut.GenerateToken(user, ["Customer"], DateTimeOffset.UtcNow.AddHours(1));
+        var exception = Assert.Throws<InvalidOperationException>(
+            () => sut.GenerateToken(user, ["Customer"], DateTimeOffset.UtcNow.AddHours(1)));
 
-        Assert.False(string.IsNullOrWhiteSpace(token));
+        Assert.Contains("Jwt:Key is not configured", exception.Message);
     }
 
     [Fact]

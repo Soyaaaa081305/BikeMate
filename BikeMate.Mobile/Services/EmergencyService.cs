@@ -20,6 +20,13 @@ internal static class EmergencyService
         return await ReadAsync<EmergencyRequestStatusDto>(response, cancellationToken);
     }
 
+    public static async Task<ConversationDto> GetConversationAsync(int requestId, CancellationToken cancellationToken = default)
+    {
+        using var http = await ApiConfig.CreateAuthorizedHttpClientAsync();
+        using var response = await http.GetAsync($"emergency/request/{requestId}/conversation", cancellationToken);
+        return await ReadAsync<ConversationDto>(response, cancellationToken);
+    }
+
     public static async Task<EmergencyRequestStatusDto> CancelAsync(int requestId, CancellationToken cancellationToken = default)
     {
         using var http = await ApiConfig.CreateAuthorizedHttpClientAsync();

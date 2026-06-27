@@ -19,7 +19,9 @@ public partial class OtpVerificationPage : ContentPage
         MaxLength = 6,
         HorizontalTextAlignment = TextAlignment.Center,
         TextColor = Color.FromArgb(Dark),
-        FontSize = 18,
+        FontSize = AppTypography.TitleSize,
+        FontFamily = AppTypography.DisplayFont,
+        FontAttributes = FontAttributes.Bold,
         BackgroundColor = Colors.Transparent
     };
     private readonly ActivityIndicator _busy = new() { Color = Color.FromArgb(Orange), IsVisible = false, IsRunning = false };
@@ -62,78 +64,92 @@ public partial class OtpVerificationPage : ContentPage
         Detach(_busy);
         var body = new VerticalStackLayout
         {
-            Padding = new Thickness(16, 18, 16, 24),
-            Spacing = 20,
-            BackgroundColor = Colors.White
+            Padding = new Thickness(18, 18, 18, 28),
+            Spacing = 14,
+            BackgroundColor = Color.FromArgb("#F6F6F6")
         };
 
-        body.Add(new Button
+        var back = new Button
         {
             Text = "Back",
             BackgroundColor = Colors.Transparent,
             TextColor = Color.FromArgb(Dark),
-            WidthRequest = 62,
-            HeightRequest = 38,
-            FontSize = 13,
-            Padding = new Thickness(0),
+            HeightRequest = 44,
+            Padding = new Thickness(4, 0),
             HorizontalOptions = LayoutOptions.Start,
             Command = new Command(async () => await GoBackAsync())
-        });
+        };
+        body.Add(back);
 
-        body.Add(new BoxView { HeightRequest = 26, Opacity = 0 });
-        body.Add(new Label
+        var verification = new VerticalStackLayout
         {
-            Text = "Account Verification",
-            TextColor = Color.FromArgb(Dark),
-            FontSize = 18,
-            FontAttributes = FontAttributes.Bold,
-            HorizontalTextAlignment = TextAlignment.Center
-        });
-
-        body.Add(EnvelopeMark());
-        body.Add(new Label
-        {
-            Text = $"We sent a verification code to {DisplayEmail(_email)}.",
-            TextColor = Color.FromArgb(Muted),
-            FontSize = 13,
-            HorizontalTextAlignment = TextAlignment.Center
-        });
-
-        body.Add(OtpBox());
+            Spacing = 14,
+            Children =
+            {
+                EnvelopeMark(),
+                new Label
+                {
+                    Text = "Verify your email",
+                    TextColor = Color.FromArgb(Dark),
+                    FontSize = AppTypography.TitleSize,
+                    FontFamily = AppTypography.DisplayFont,
+                    FontAttributes = FontAttributes.Bold,
+                    HorizontalTextAlignment = TextAlignment.Center
+                },
+                new Label
+                {
+                    Text = $"Enter the six-digit code sent to {DisplayEmail(_email)}.",
+                    TextColor = Color.FromArgb(Muted),
+                    FontSize = AppTypography.BodySize,
+                    FontFamily = AppTypography.BodyFont,
+                    HorizontalTextAlignment = TextAlignment.Center
+                },
+                OtpBox()
+            }
+        };
         var resendSeconds = ResendSecondsRemaining();
-        body.Add(new Button
+        verification.Add(new Button
         {
-            Text = resendSeconds > 0 ? $"Resend Code ({resendSeconds}s)" : "Resend Code",
+            Text = resendSeconds > 0 ? $"Resend code in {resendSeconds}s" : "Resend code",
             BackgroundColor = Colors.Transparent,
-            TextColor = resendSeconds > 0 || _isBusy ? Color.FromArgb("#9AA7C7") : Color.FromArgb("#4F6FD8"),
-            FontSize = 11,
+            TextColor = resendSeconds > 0 || _isBusy ? Color.FromArgb("#9A9A9A") : Color.FromArgb(Orange),
             IsEnabled = !_isBusy && resendSeconds == 0,
             Command = new Command(async () => await ResendAsync())
         });
-        body.Add(PrimaryButton(_isBusy ? "Please wait..." : "Continue", VerifyAsync, !_isBusy));
+        verification.Add(PrimaryButton(_isBusy ? "Verifying..." : "Verify and continue", VerifyAsync, !_isBusy));
+        body.Add(new Border
+        {
+            BackgroundColor = Colors.White,
+            Stroke = Color.FromArgb("#E6E6E6"),
+            StrokeShape = new RoundRectangle { CornerRadius = 8 },
+            Padding = new Thickness(18),
+            Content = verification
+        });
         body.Add(_busy);
 
+        AppVisualPolish.Apply(body);
         Content = new ScrollView { Content = body };
     }
 
     private View EnvelopeMark()
     {
-        var grid = new Grid { HeightRequest = 130 };
+        var grid = new Grid { HeightRequest = 84 };
         grid.Add(new Border
         {
-            WidthRequest = 94,
-            HeightRequest = 66,
-            BackgroundColor = Color.FromArgb("#F4F4F4"),
+            WidthRequest = 72,
+            HeightRequest = 72,
+            BackgroundColor = Color.FromArgb("#FFF2EA"),
             Stroke = Colors.Transparent,
-            StrokeShape = new RoundRectangle { CornerRadius = 32 },
+            StrokeShape = new RoundRectangle { CornerRadius = 8 },
             HorizontalOptions = LayoutOptions.Center,
             VerticalOptions = LayoutOptions.Center
         });
         grid.Add(new Label
         {
-            Text = "M",
-            TextColor = Color.FromArgb("#E94335"),
-            FontSize = 18,
+            Text = "BM",
+            TextColor = Color.FromArgb(Orange),
+            FontSize = AppTypography.TitleSize,
+            FontFamily = AppTypography.DisplayFont,
             FontAttributes = FontAttributes.Bold,
             HorizontalTextAlignment = TextAlignment.Center,
             VerticalTextAlignment = TextAlignment.Center
@@ -280,7 +296,7 @@ public partial class OtpVerificationPage : ContentPage
             Text = text,
             BackgroundColor = Color.FromArgb(Orange),
             TextColor = Colors.White,
-            CornerRadius = 10,
+            CornerRadius = 8,
             HeightRequest = 46,
             FontSize = 13,
             FontAttributes = FontAttributes.Bold,

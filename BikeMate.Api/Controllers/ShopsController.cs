@@ -2,12 +2,41 @@ using BikeMate.Api.Helpers;
 using BikeMate.Core.Constants;
 using BikeMate.Core.DTOs;
 using BikeMate.Core.Entities;
+using BikeMate.Core.Services;
 using BikeMate.Infrastructure.Data;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 
 namespace BikeMate.Api.Controllers;
+
+public sealed record ShopReputationDto(
+    int ShopId,
+    decimal AverageRating,
+    int ReviewCount,
+    int CompletedJobs,
+    IReadOnlyList<ShopTechnicianSummaryDto> TopTechnicians,
+    IReadOnlyList<ShopCustomerReviewDto> RecentReviews);
+
+public sealed record ShopTechnicianSummaryDto(
+    int MechanicId,
+    string FullName,
+    string? ProfileImageUrl,
+    decimal AverageRating,
+    int ReviewCount,
+    int CompletedJobs,
+    int? YearsExperience,
+    string AvailabilityStatus,
+    bool IsVerified);
+
+public sealed record ShopCustomerReviewDto(
+    int ReviewId,
+    int Rating,
+    string? Comment,
+    string CustomerName,
+    string TechnicianName,
+    string? ServiceName,
+    DateTime CreatedAt);
 
 [ApiController]
 [Route("api/[controller]")]
@@ -21,6 +50,88 @@ public sealed class ShopsController(BikeMateDbContext db) : ControllerBase
             .Where(x => x.ShopId == id)
             .Select(x => new ShopDetailsDto(x.ShopId, x.ShopName, x.ShopDescription, x.AddressLine, x.City, x.Province, x.ContactNumber, x.ShopStatus, x.Latitude, x.Longitude))
             .SingleAsync(cancellationToken));
+    }
+
+    [HttpGet("{id:int}/reputation")]
+    [AllowAnonymous]
+    public async Task<ActionResult<ShopReputationDto>> Reputation(int id, CancellationToken cancellationToken)
+    {
+        if (!await db.Shops.AnyAsync(x => x.ShopId == id && x.ShopStatus == "verified", cancellationToken))
+        {
+            return NotFound(new { error = "Verified repair shop not found." });
+        }
+
+        var shopReviews = db.Reviews.Where(x => x.Request!.ShopId == id);
+        var reviewCount = await shopReviews.CountAsync(cancellationToken);
+        var averageRating = reviewCount == 0
+            ? 0m
+            : Math.Round(await shopReviews.AverageAsync(x => (decimal)x.Rating, cancellationToken), 1);
+        var completedJobs = await db.ServiceRequests.CountAsync(
+            x => x.ShopId == id &&
+                 (x.CompletedAt != null || x.CurrentStatus!.StatusName == "completed"),
+            cancellationToken);
+
+        var topTechnicians = await db.ShopMechanics
+            .Where(x => x.ShopId == id && x.IsActive && x.Mechanic!.IsVerified)
+            .Select(x => new
+            {
+                x.MechanicId,
+                FullName = x.Mechanic!.User!.FirstName + " " + x.Mechanic.User.LastName,
+                x.Mechanic.User.ProfileImageUrl,
+                Rating = db.Reviews
+                    .Where(review => review.MechanicId == x.MechanicId && review.Request!.ShopId == id)
+                    .Select(review => (decimal?)review.Rating)
+                    .Average() ?? x.Mechanic.AverageRating,
+                ReviewCount = db.Reviews.Count(review =>
+                    review.MechanicId == x.MechanicId &&
+                    review.Request!.ShopId == id),
+                RecordedCompletedJobs = db.ServiceRequests.Count(request =>
+                    request.ShopId == id &&
+                    request.MechanicId == x.MechanicId &&
+                    (request.CompletedAt != null || request.CurrentStatus!.StatusName == "completed")),
+                ProfileCompletedJobs = x.Mechanic.TotalCompletedJobs,
+                x.Mechanic.YearsExperience,
+                x.Mechanic.AvailabilityStatus,
+                x.Mechanic.IsVerified
+            })
+            .OrderByDescending(x => x.Rating)
+            .ThenByDescending(x => x.ReviewCount)
+            .ThenByDescending(x => x.RecordedCompletedJobs)
+            .ThenByDescending(x => x.ProfileCompletedJobs)
+            .Take(5)
+            .ToArrayAsync(cancellationToken);
+
+        var recentReviews = await shopReviews
+            .OrderByDescending(x => x.CreatedAt)
+            .Take(10)
+            .Select(x => new ShopCustomerReviewDto(
+                x.ReviewId,
+                x.Rating,
+                x.Comment,
+                x.Client!.User!.FirstName + " " + x.Client.User.LastName,
+                x.Mechanic!.User!.FirstName + " " + x.Mechanic.User.LastName,
+                x.Request!.ShopService != null ? x.Request.ShopService.ServiceName : null,
+                x.CreatedAt))
+            .ToArrayAsync(cancellationToken);
+
+        return Ok(new ShopReputationDto(
+            id,
+            averageRating,
+            reviewCount,
+            completedJobs,
+            topTechnicians
+                .Select(x => new ShopTechnicianSummaryDto(
+                    x.MechanicId,
+                    x.FullName,
+                    x.ProfileImageUrl,
+                    Math.Round(x.Rating, 1),
+                    x.ReviewCount,
+                    Math.Max(x.RecordedCompletedJobs, x.ProfileCompletedJobs),
+                    x.YearsExperience,
+                    x.AvailabilityStatus,
+                    x.IsVerified))
+                .ToArray(),
+            recentReviews));
     }
 
     [HttpGet("my")]
@@ -39,18 +150,50 @@ public sealed class ShopsController(BikeMateDbContext db) : ControllerBase
     public async Task<ActionResult<IReadOnlyCollection<ShopSummaryDto>>> Nearby(
         [FromQuery] decimal? latitude,
         [FromQuery] decimal? longitude,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        [FromQuery] decimal radiusKm = 50m,
+        [FromQuery] string? concern = null)
     {
         var shops = await db.Shops
+            .Include(x => x.Services)
+            .ThenInclude(x => x.Category)
             .Where(x => x.ShopStatus == "verified")
             .ToArrayAsync(cancellationToken);
 
-        return Ok(shops
-            .OrderBy(x => latitude is null || longitude is null || x.Latitude is null || x.Longitude is null
-                ? 999m
-                : DistanceKm(latitude.Value, longitude.Value, x.Latitude.Value, x.Longitude.Value))
+        var ranked = shops
+            .Where(shop => shop.Services.Any(service =>
+                service.IsActive &&
+                RepairConcernMatcher.Matches(
+                    concern,
+                    service.Category?.CategoryName,
+                    service.ServiceName,
+                    service.ServiceDescription)))
+            .Select(shop => new
+            {
+                Shop = shop,
+                DistanceKm = latitude is null || longitude is null || shop.Latitude is null || shop.Longitude is null
+                    ? (decimal?)null
+                    : DistanceKm(latitude.Value, longitude.Value, shop.Latitude.Value, shop.Longitude.Value)
+            })
+            .Where(item =>
+                latitude is null ||
+                longitude is null ||
+                (item.DistanceKm is not null && item.DistanceKm <= Math.Clamp(radiusKm, 1m, 200m)))
+            .OrderBy(item => item.DistanceKm ?? decimal.MaxValue)
             .Take(20)
-            .Select(x => new ShopSummaryDto(x.ShopId, x.ShopName, x.AddressLine, x.City, x.ContactNumber, x.ShopStatus, x.Latitude, x.Longitude))
+            .Select(item => item.Shop)
+            .ToArray();
+
+        return Ok(ranked
+            .Select(shop => new ShopSummaryDto(
+                shop.ShopId,
+                shop.ShopName,
+                shop.AddressLine,
+                shop.City,
+                shop.ContactNumber,
+                shop.ShopStatus,
+                shop.Latitude,
+                shop.Longitude))
             .ToArray());
     }
 

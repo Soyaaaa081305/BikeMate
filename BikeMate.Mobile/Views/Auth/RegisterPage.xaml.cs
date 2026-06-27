@@ -16,7 +16,7 @@ public partial class RegisterPage : ContentPage
     private const string Orange = "#FF6B2C";
     private const string Dark = "#222222";
     private const string Muted = "#777777";
-    private const string BorderColor = "#FFB199";
+    private const string BorderColor = "#DCDCDC";
 
     private int _step = 1;
     private bool _acceptedTerms;
@@ -100,56 +100,52 @@ public partial class RegisterPage : ContentPage
         DetachReusableControls();
         var body = new VerticalStackLayout
         {
-            Padding = new Thickness(14, 18, 14, 8),
-            Spacing = 12,
-            BackgroundColor = Colors.White
+            Padding = new Thickness(18, 18, 18, 28),
+            Spacing = 14,
+            BackgroundColor = Color.FromArgb("#F6F6F6")
         };
 
-        body.Add(Header(_step == 4 ? "" : "Create an Account"));
-        if (_step <= 3)
-        {
-            body.Add(StepIndicator(_step));
-        }
+        body.Add(Header("Create your account"));
+        body.Add(StepIndicator(_step));
+        var section = new VerticalStackLayout { Spacing = 12 };
+        section.Add(Label(StepTitle(_step), 18, Dark, TextAlignment.Start, FontAttributes.Bold));
+        section.Add(Label(StepDescription(_step), 13, Muted, TextAlignment.Start));
 
         switch (_step)
         {
             case 1:
-                body.Add(PhoneNumberField());
-                body.Add(LabeledField("Email *", _emailEntry));
-                body.Add(LabeledField("Password *", _passwordEntry));
-                body.Add(LabeledField("Confirm Password *", _confirmPasswordEntry));
-                body.Add(Footnote("Use more than 8 characters."));
-                body.Add(Spacer(32));
-                body.Add(Footnote());
-                body.Add(PrimaryButton("Continue", () => ContinueFromStep1Async()));
+                section.Add(PhoneNumberField());
+                section.Add(LabeledField("Email address *", _emailEntry));
+                section.Add(LabeledField("Password *", _passwordEntry));
+                section.Add(LabeledField("Confirm password *", _confirmPasswordEntry));
+                section.Add(Footnote("Use at least 9 characters. A mix of letters, numbers, and symbols is recommended."));
+                section.Add(PrimaryButton("Continue", () => ContinueFromStep1Async()));
                 break;
             case 2:
-                body.Add(Label("Basic\nInformation", 11, Dark, TextAlignment.Center));
-                body.Add(LabeledField("First Name *", _firstNameEntry));
-                body.Add(LabeledField("Middle Name", _middleNameEntry));
-                body.Add(LabeledField("Last Name *", _lastNameEntry));
-                body.Add(LabeledField("Sex *", _sexPicker));
-                body.Add(LabeledField("Birthdate *", _birthdayPicker));
-                body.Add(Spacer(24));
-                body.Add(Footnote("Fields with asterisk (*) are required."));
-                body.Add(PrimaryButton("Continue", () => ContinueFromStep2Async()));
+                section.Add(LabeledField("First name *", _firstNameEntry));
+                section.Add(LabeledField("Middle name", _middleNameEntry));
+                section.Add(LabeledField("Last name *", _lastNameEntry));
+                section.Add(LabeledField("Sex *", _sexPicker));
+                section.Add(LabeledField("Birthdate *", _birthdayPicker));
+                section.Add(Footnote());
+                section.Add(PrimaryButton("Continue", () => ContinueFromStep2Async()));
                 break;
             case 3:
-                body.Add(Label("Basic\nInformation", 11, Dark, TextAlignment.Center));
-                body.Add(AddressGrid());
-                body.Add(LabeledField("Address *", _addressEditor));
-                body.Add(UploadRow());
-                body.Add(IdPreview());
-                body.Add(Spacer(18));
-                body.Add(Footnote("Fields with asterisk (*) are required."));
-                body.Add(PrimaryButton("Continue", () => ContinueFromStep3Async()));
+                section.Add(AddressGrid());
+                section.Add(LabeledField("Complete address *", _addressEditor));
+                section.Add(UploadRow());
+                section.Add(IdPreview());
+                section.Add(Footnote("Use a clear, readable photo of a valid government-issued ID."));
+                section.Add(PrimaryButton("Review terms", () => ContinueFromStep3Async()));
                 break;
             case 4:
-                body.Add(TermsView());
+                section.Add(TermsView());
                 break;
         }
 
+        body.Add(Card(section, new Thickness(16), 8));
         body.Add(_busy);
+        AppVisualPolish.Apply(body);
         Content = new ScrollView { Content = body };
     }
 
@@ -178,9 +174,9 @@ public partial class RegisterPage : ContentPage
 
         if (!string.IsNullOrWhiteSpace(title))
         {
-            var copy = new VerticalStackLayout { Spacing = 0 };
+            var copy = new VerticalStackLayout { Spacing = 2, VerticalOptions = LayoutOptions.Center };
             copy.Add(Label(title, 14, Dark, TextAlignment.Start, FontAttributes.Bold));
-            copy.Add(Label("Let us know you more!", 10, Muted, TextAlignment.Start));
+            copy.Add(Label("Secure customer registration", 11, Muted, TextAlignment.Start));
             grid.Add(copy, 1, 0);
         }
 
@@ -189,23 +185,20 @@ public partial class RegisterPage : ContentPage
 
     private static View StepIndicator(int step)
     {
-        var stack = new VerticalStackLayout
+        var stack = new VerticalStackLayout { Spacing = 7 };
+        stack.Add(Label($"Step {step} of 4", 11, Muted, TextAlignment.Start, FontAttributes.Bold));
+        var progress = new Grid { ColumnSpacing = 5 };
+        for (var index = 0; index < 4; index++)
         {
-            Spacing = 8,
-            Padding = new Thickness(0, 28, 0, 10),
-            HorizontalOptions = LayoutOptions.Center
-        };
-        stack.Add(Label($"Step {step}", 10, Dark, TextAlignment.Center));
-        stack.Add(new Border
-        {
-            WidthRequest = 6,
-            HeightRequest = 6,
-            Stroke = Colors.Transparent,
-            StrokeShape = new RoundRectangle { CornerRadius = 3 },
-            BackgroundColor = Colors.Black,
-            HorizontalOptions = LayoutOptions.Center
-        });
-        stack.Add(new BoxView { HeightRequest = 1, WidthRequest = 88, BackgroundColor = Color.FromArgb("#E5E5E5") });
+            progress.ColumnDefinitions.Add(new ColumnDefinition(GridLength.Star));
+            progress.Add(new BoxView
+            {
+                HeightRequest = 4,
+                CornerRadius = 2,
+                Color = index < step ? Color.FromArgb(Orange) : Color.FromArgb("#DCDCDC")
+            }, index, 0);
+        }
+        stack.Add(progress);
         return stack;
     }
 
@@ -234,16 +227,22 @@ public partial class RegisterPage : ContentPage
             },
             Padding = new Thickness(0, 4)
         };
-        grid.Add(Label(_validIdFile is null ? "Upload a valid ID *" : _validIdFile.FileName, 11, Dark, TextAlignment.Start), 0, 0);
+        grid.Add(Label(
+            _validIdFile is null ? "Valid government ID *" : _validIdFile.FileName,
+            11,
+            Dark,
+            TextAlignment.Start,
+            FontAttributes.Bold), 0, 0);
         grid.Add(new Button
         {
-            Text = "Upload",
-            BackgroundColor = Color.FromArgb(Orange),
-            TextColor = Colors.White,
-            FontSize = 11,
-            HeightRequest = 30,
-            CornerRadius = 14,
-            Padding = new Thickness(16, 0),
+            Text = _validIdFile is null ? "Choose photo" : "Replace",
+            BackgroundColor = Colors.White,
+            TextColor = Color.FromArgb(Orange),
+            BorderColor = Color.FromArgb(Orange),
+            BorderWidth = 1,
+            HeightRequest = 44,
+            CornerRadius = 8,
+            Padding = new Thickness(14, 0),
             Command = new Command(async () => await UploadValidIdAsync())
         }, 1, 0);
         return grid;
@@ -269,42 +268,37 @@ public partial class RegisterPage : ContentPage
         {
             grid.Add(new Label
             {
-                Text = "{    +    }",
-                TextColor = Color.FromArgb("#D7D7D7"),
-                FontSize = 18,
+                Text = "Your selected ID preview will appear here.",
+                TextColor = Color.FromArgb(Muted),
+                FontSize = AppTypography.CaptionSize,
                 HorizontalTextAlignment = TextAlignment.Center,
-                VerticalTextAlignment = TextAlignment.Center
+                VerticalTextAlignment = TextAlignment.Center,
+                Padding = new Thickness(20)
             });
         }
 
-        return Card(grid, new Thickness(0), 2);
+        return Card(grid, new Thickness(0), 8);
     }
 
     private View TermsView()
     {
         var root = new VerticalStackLayout { Spacing = 14 };
-        root.Add(Label("Terms and Conditions", 18, Dark, TextAlignment.Center, FontAttributes.Bold));
-        root.Add(Label("Please review these terms before creating your BikeMate account.", 13, Muted, TextAlignment.Center));
-        root.Add(Label(
-            "Service use. BikeMate connects customers with repair shops, mechanics, emergency roadside support, booking tools, live location, chat, and secure payment. You agree to provide accurate booking, contact, bike, address, and location information so the assigned shop or mechanic can serve you safely.",
-            13,
-            Dark,
-            TextAlignment.Start));
-        root.Add(Label(
-            "Account responsibility. Keep your login details private, use your real email and Philippine mobile number, and do not create duplicate, misleading, abusive, or fraudulent accounts. BikeMate may suspend or remove accounts that misuse bookings, payments, emergency tools, reviews, or chat.",
-            13,
-            Dark,
-            TextAlignment.Start));
-        root.Add(Label(
-            "Payments and repairs. Prices, availability, pickup, arrival time, parts, and repair outcomes may vary by shop, service, location, and inspection. PayMongo processes secure payments; BikeMate does not store card or wallet credentials. Refunds, cancellations, and disputes may require review of booking records and payment status.",
-            13,
-            Dark,
-            TextAlignment.Start));
-        root.Add(Label(
-            "Privacy and safety. BikeMate collects and uses account details, uploaded IDs, contact details, GPS/location data, booking media, chat records, and payment references only to operate, protect, and improve the service. You may request correction or deletion where allowed by law. Emergency and location features are support tools and do not replace public emergency services.",
-            13,
-            Dark,
-            TextAlignment.Start));
+        root.Add(TermsSection(
+            "Using BikeMate",
+            "BikeMate connects customers with repair shops, mechanics, emergency roadside support, booking tools, live location, chat, and secure payment. You agree to provide accurate booking, contact, bike, address, and location information so the assigned shop or mechanic can serve you safely.",
+            Dark));
+        root.Add(TermsSection(
+            "Account responsibility",
+            "Keep your login details private, use your real email and Philippine mobile number, and do not create duplicate, misleading, abusive, or fraudulent accounts. BikeMate may suspend or remove accounts that misuse bookings, payments, emergency tools, reviews, or chat.",
+            Dark));
+        root.Add(TermsSection(
+            "Payments and repairs",
+            "Prices, availability, pickup, arrival time, parts, and repair outcomes may vary by shop, service, location, and inspection. PayMongo processes secure payments; BikeMate does not store card or wallet credentials. Refunds, cancellations, and disputes may require review of booking records and payment status.",
+            Dark));
+        root.Add(TermsSection(
+            "Privacy and safety",
+            "BikeMate collects and uses account details, uploaded IDs, contact details, GPS/location data, booking media, chat records, and payment references only to operate, protect, and improve the service. You may request correction or deletion where allowed by law. Emergency and location features are support tools and do not replace public emergency services.",
+            Dark));
 
         var check = new CheckBox { IsChecked = _acceptedTerms, Color = Color.FromArgb(Orange) };
         check.CheckedChanged += (_, e) => _acceptedTerms = e.Value;
@@ -317,9 +311,9 @@ public partial class RegisterPage : ContentPage
             }
         };
         row.Add(check, 0, 0);
-        row.Add(Label("I have read, understood, and agree to BikeMate's Terms and Conditions and Privacy Policy.", 11, Muted, TextAlignment.Start), 1, 0);
+        row.Add(Label("I have read and agree to BikeMate's Terms and Conditions and Privacy Policy.", 11, Muted, TextAlignment.Start), 1, 0);
         root.Add(row);
-        root.Add(PrimaryButton("Continue", RegisterAsync));
+        root.Add(PrimaryButton("Create my account", RegisterAsync));
         return root;
     }
 
@@ -468,7 +462,7 @@ public partial class RegisterPage : ContentPage
 
             _validIdFile = result;
             _validIdPreviewPath = await CopyToCacheAsync(result);
-            await DisplayAlertAsync("Approved ID", "The ID you provided has been approved by our system.", "Dismiss");
+            await DisplayAlertAsync("ID selected", "Review the preview, then continue when the image is clear and readable.", "Done");
             RenderStep();
         }
         catch (Exception ex)
@@ -598,8 +592,9 @@ public partial class RegisterPage : ContentPage
             Keyboard = keyboard ?? Keyboard.Default,
             IsPassword = isPassword,
             TextColor = Color.FromArgb(Dark),
-            PlaceholderColor = Color.FromArgb("#FF8F68"),
+            PlaceholderColor = Color.FromArgb(Muted),
             FontSize = 13,
+            FontFamily = AppTypography.BodyFont,
             BackgroundColor = Colors.Transparent
         };
     }
@@ -607,7 +602,7 @@ public partial class RegisterPage : ContentPage
     private static Border FieldCard(View content)
     {
         Detach(content);
-        var card = Card(content, new Thickness(10, 0), 4);
+        var card = Card(content, new Thickness(10, 1), 8);
         card.HorizontalOptions = LayoutOptions.Fill;
         return card;
     }
@@ -663,7 +658,7 @@ public partial class RegisterPage : ContentPage
             Children =
             {
                 Label("Phone Number *", 10, Dark, TextAlignment.Start, FontAttributes.Bold),
-                Card(row, new Thickness(10, 0), 4)
+                Card(row, new Thickness(10, 1), 8)
             }
         };
     }
@@ -689,7 +684,7 @@ public partial class RegisterPage : ContentPage
             Text = text,
             BackgroundColor = Color.FromArgb(Orange),
             TextColor = Colors.White,
-            CornerRadius = 10,
+            CornerRadius = 8,
             HeightRequest = 46,
             FontSize = 13,
             FontAttributes = FontAttributes.Bold,
@@ -719,7 +714,42 @@ public partial class RegisterPage : ContentPage
 
     private static View Footnote(string text = "Fields with asterisk (*) are required.")
     {
-        return Label(text, 9, Muted, TextAlignment.Center);
+        return Label(text, 11, Muted, TextAlignment.Start);
+    }
+
+    private static string StepTitle(int step)
+    {
+        return step switch
+        {
+            1 => "Account credentials",
+            2 => "Personal details",
+            3 => "Address and identity",
+            _ => "Terms and privacy"
+        };
+    }
+
+    private static string StepDescription(int step)
+    {
+        return step switch
+        {
+            1 => "Enter the contact details you will use to sign in.",
+            2 => "Tell repair partners who they will be assisting.",
+            3 => "Add your service address and an ID for account verification.",
+            _ => "Review how BikeMate handles bookings, payments, safety, and personal data."
+        };
+    }
+
+    private static View TermsSection(string title, string body, string color)
+    {
+        return new VerticalStackLayout
+        {
+            Spacing = 4,
+            Children =
+            {
+                Label(title, 13, color, TextAlignment.Start, FontAttributes.Bold),
+                Label(body, 13, color, TextAlignment.Start)
+            }
+        };
     }
 
     private static string NormalizeEmail(string? email)

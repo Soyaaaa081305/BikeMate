@@ -102,6 +102,14 @@ public sealed class EmergencySosPage : CustomerPageBase
             FontSize = 13,
             HorizontalTextAlignment = TextAlignment.Center
         });
+        body.Add(new Label
+        {
+            Text = "No upfront payment is required for BikeMate emergency coordination and responder tracking.",
+            TextColor = Color.FromArgb("#167A3A"),
+            FontSize = 11,
+            FontAttributes = FontAttributes.Bold,
+            HorizontalTextAlignment = TextAlignment.Center
+        });
         body.Add(BuildSosButton());
 
         var notes = new Editor
@@ -1023,7 +1031,8 @@ public sealed class ActiveEmergencyTrackingPage : CustomerPageBase, IQueryAttrib
                 Separator(),
                 Label($"Responder: {status?.AssignedMechanicName ?? "Searching"}", 13, CustomerUi.Dark),
                 Label($"Phone: {status?.AssignedMechanicPhone ?? "Not assigned"}", 12, CustomerUi.Muted),
-                Label($"Location: {status?.ServiceLocation ?? "Current location"}", 12, CustomerUi.Muted)
+                Label($"Location: {status?.ServiceLocation ?? "Current location"}", 12, CustomerUi.Muted),
+                Label("Payment: No upfront payment required", 11, Color.FromArgb("#167A3A"), FontAttributes.Bold)
             }
         }, Colors.White, 12));
 
@@ -1036,7 +1045,7 @@ public sealed class ActiveEmergencyTrackingPage : CustomerPageBase, IQueryAttrib
             },
             ColumnSpacing = 10
         };
-        actions.Add(GhostButton("Message", new Command(async () => await Shell.Current.GoToAsync("//CustomerMessagesPage"))), 0, 0);
+        actions.Add(GhostButton("BikeMate Emergency chat", new Command(async () => await OpenEmergencyChatAsync())), 0, 0);
         actions.Add(OrangeButton("Open Maps", new Command(async () =>
         {
             if (status is not null)
@@ -1071,6 +1080,25 @@ public sealed class ActiveEmergencyTrackingPage : CustomerPageBase, IQueryAttrib
         }
 
         SetScaffold(new ScrollView { Content = body }, "Home", false);
+    }
+
+    private async Task OpenEmergencyChatAsync()
+    {
+        if (_requestId <= 0)
+        {
+            await DisplayAlertAsync("Emergency chat unavailable", "The emergency request is still being prepared.", "OK");
+            return;
+        }
+
+        try
+        {
+            var conversation = await EmergencyService.GetConversationAsync(_requestId);
+            await Shell.Current.Navigation.PushAsync(new CustomerChatPage(conversation.ConversationId));
+        }
+        catch (Exception ex)
+        {
+            await DisplayAlertAsync("Emergency chat unavailable", ex.Message, "OK");
+        }
     }
 
     private static View BuildMap(EmergencyRequestStatusDto? status)

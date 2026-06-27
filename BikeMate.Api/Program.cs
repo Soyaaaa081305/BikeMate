@@ -15,6 +15,7 @@ builder.Services.AddControllers();
 builder.Services.AddOpenApi();
 builder.Services.AddSignalR();
 builder.Services.AddHttpClient();
+builder.Services.AddMemoryCache();
 builder.Services.Configure<ForwardedHeadersOptions>(options =>
 {
     options.ForwardedHeaders =
@@ -91,6 +92,15 @@ builder.Services.AddScoped<IAdminReportService, AdminReportService>();
 builder.Services.AddHttpContextAccessor();
 
 var app = builder.Build();
+
+if (args.Any(arg => string.Equals(arg, "--migrate", StringComparison.OrdinalIgnoreCase)))
+{
+    await using var scope = app.Services.CreateAsyncScope();
+    var database = scope.ServiceProvider.GetRequiredService<BikeMateDbContext>();
+    await database.Database.MigrateAsync();
+    Console.WriteLine("BikeMate database migrations applied.");
+    return;
+}
 
 if (app.Environment.IsDevelopment())
 {

@@ -102,8 +102,11 @@ public sealed class CustomersController(BikeMateDbContext db) : ControllerBase
     [HttpPut("me/valid-id")]
     public async Task<IActionResult> UpdateValidId(UploadMediaDto dto, CancellationToken cancellationToken)
     {
-        var customer = await db.Clients.SingleAsync(x => x.UserId == User.GetUserId(), cancellationToken);
+        var customer = await db.Clients
+            .Include(x => x.User)
+            .SingleAsync(x => x.UserId == User.GetUserId(), cancellationToken);
         customer.ValidIdImageUrl = RequireMediaUrl(dto.MediaUrl, "Valid ID");
+        customer.User!.UpdatedAt = DateTime.UtcNow;
         await db.SaveChangesAsync(cancellationToken);
         return Ok(new { message = "Valid ID updated." });
     }
@@ -113,16 +116,10 @@ public sealed class CustomersController(BikeMateDbContext db) : ControllerBase
     {
         var user = await db.Users
             .Include(x => x.DeviceTokens)
+            .Include(x => x.AuthProviders)
             .SingleAsync(x => x.UserId == User.GetUserId(), cancellationToken);
 
-        user.AccountStatus = "deleted";
-        user.UpdatedAt = DateTime.UtcNow;
-        foreach (var token in user.DeviceTokens)
-        {
-            token.IsActive = false;
-            token.UpdatedAt = DateTime.UtcNow;
-        }
-
+        DeletedAccountIdentity.Anonymize(user);
         await db.SaveChangesAsync(cancellationToken);
         return NoContent();
     }

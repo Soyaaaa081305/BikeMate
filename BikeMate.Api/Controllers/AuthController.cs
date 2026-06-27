@@ -39,9 +39,13 @@ public sealed class AuthController(
         var normalizedPhone = AuthService.NormalizePhilippineMobile(phone);
 
         var emailAvailable = string.IsNullOrWhiteSpace(normalizedEmail) ||
-            !await db.Users.AnyAsync(x => x.Email == normalizedEmail, cancellationToken);
+            !await db.Users.AnyAsync(
+                x => x.Email == normalizedEmail && x.AccountStatus != "deleted",
+                cancellationToken);
         var phoneAvailable = string.IsNullOrWhiteSpace(normalizedPhone) ||
-            !await db.Users.AnyAsync(x => x.PhoneNumber == normalizedPhone, cancellationToken);
+            !await db.Users.AnyAsync(
+                x => x.PhoneNumber == normalizedPhone && x.AccountStatus != "deleted",
+                cancellationToken);
 
         return Ok(new AuthAvailabilityDto(emailAvailable, phoneAvailable));
     }

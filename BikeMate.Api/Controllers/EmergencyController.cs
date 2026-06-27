@@ -55,7 +55,7 @@ public sealed class EmergencyController(
             ServiceLocationAddress = dto.ServiceLocation.Trim(),
             ServiceLatitude = dto.Latitude,
             ServiceLongitude = dto.Longitude,
-            EstimatedTotal = emergencyService?.BasePrice ?? 0m,
+            EstimatedTotal = 0m,
             CreatedAt = DateTime.UtcNow
         };
 
@@ -73,6 +73,7 @@ public sealed class EmergencyController(
 
         await NotifyRespondersAsync(request, cancellationToken);
         await db.SaveChangesAsync(cancellationToken);
+        await bookingConversationService.EnsureEmergencySupportConversationAsync(request.RequestId, cancellationToken);
 
         var status = await BuildStatusDtoAsync(request.RequestId, cancellationToken);
         await hubContext.Clients.Group(EmergencyHub.GetEmergencyGroup(request.RequestId))
@@ -85,6 +86,24 @@ public sealed class EmergencyController(
     {
         await EnsureCanViewRequestAsync(requestId, cancellationToken);
         return Ok(await BuildStatusDtoAsync(requestId, cancellationToken));
+    }
+
+    [HttpGet("request/{requestId:int}/conversation")]
+    [Authorize(Roles = AppRoles.Customer)]
+    public async Task<ActionResult<ConversationDto>> GetConversation(int requestId, CancellationToken cancellationToken)
+    {
+        await GetCustomerRequestAsync(requestId, cancellationToken);
+        var conversationId = await bookingConversationService
+            .EnsureEmergencySupportConversationAsync(requestId, cancellationToken);
+        if (conversationId is null)
+        {
+            return StatusCode(StatusCodes.Status503ServiceUnavailable, new
+            {
+                message = "BikeMate Emergency support is not configured yet."
+            });
+        }
+
+        return Ok(new ConversationDto(conversationId.Value, requestId, "emergency_support", DateTime.UtcNow));
     }
 
     [HttpPut("request/{requestId:int}/cancel")]
@@ -114,7 +133,7 @@ public sealed class EmergencyController(
         request.AcceptedAt = DateTime.UtcNow;
 
         await SetStatusAsync(request, "accepted", userId, "Emergency request accepted by responder.", cancellationToken);
-        await bookingConversationService.SyncRequestAsync(requestId, cancellationToken);
+        await bookingConversationService.EnsureEmergencySupportConversationAsync(requestId, cancellationToken);
         db.Notifications.Add(new Notification
         {
             UserId = request.Client!.UserId,

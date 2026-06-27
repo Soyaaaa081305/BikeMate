@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using BikeMate.Core.DTOs;
@@ -194,16 +195,34 @@ internal static class CustomerApiClient
         return await ReadAsync<MessageDto>(response, cancellationToken);
     }
 
-    public static async Task<IReadOnlyList<ShopSummaryDto>> GetShopsAsync(CancellationToken cancellationToken = default)
+    public static async Task<IReadOnlyList<ShopSummaryDto>> GetShopsAsync(
+        decimal? latitude = null,
+        decimal? longitude = null,
+        string? concern = null,
+        CancellationToken cancellationToken = default)
     {
         using var http = ApiConfig.CreateHttpClient();
-        return await GetAsync<IReadOnlyList<ShopSummaryDto>>(http, "services/shops", cancellationToken);
+        var encodedConcern = string.IsNullOrWhiteSpace(concern)
+            ? ""
+            : Uri.EscapeDataString(concern);
+        var endpoint = latitude is not null && longitude is not null
+            ? $"shops/nearby?latitude={latitude.Value.ToString(System.Globalization.CultureInfo.InvariantCulture)}&longitude={longitude.Value.ToString(System.Globalization.CultureInfo.InvariantCulture)}&radiusKm=50{(encodedConcern.Length == 0 ? "" : $"&concern={encodedConcern}")}"
+            : $"services/shops{(encodedConcern.Length == 0 ? "" : $"?concern={encodedConcern}")}";
+        return await GetAsync<IReadOnlyList<ShopSummaryDto>>(http, endpoint, cancellationToken);
     }
 
     public static async Task<ShopDetailsDto> GetShopDetailsAsync(int shopId, CancellationToken cancellationToken = default)
     {
         using var http = ApiConfig.CreateHttpClient();
         return await GetAsync<ShopDetailsDto>(http, $"shops/{shopId}", cancellationToken);
+    }
+
+    public static async Task<ShopReputationDto> GetShopReputationAsync(
+        int shopId,
+        CancellationToken cancellationToken = default)
+    {
+        using var http = ApiConfig.CreateHttpClient();
+        return await GetAsync<ShopReputationDto>(http, $"shops/{shopId}/reputation", cancellationToken);
     }
 
     public static async Task<IReadOnlyList<ShopServiceDto>> GetShopServicesAsync(int shopId, CancellationToken cancellationToken = default)
@@ -281,12 +300,54 @@ internal static class CustomerApiClient
         return await ReadAsync<ReviewDto>(response, cancellationToken);
     }
 
+    public static async Task<IReadOnlyList<PhilippineRegionDto>> GetPhilippineRegionsAsync(CancellationToken cancellationToken = default)
+    {
+        using var http = ApiConfig.CreateHttpClient();
+        return await GetAsync<IReadOnlyList<PhilippineRegionDto>>(http, "geography/regions", cancellationToken);
+    }
+
+    public static async Task<IReadOnlyList<PhilippineLocalityDto>> GetPhilippineLocalitiesAsync(
+        string regionCode,
+        CancellationToken cancellationToken = default)
+    {
+        using var http = ApiConfig.CreateHttpClient();
+        return await GetAsync<IReadOnlyList<PhilippineLocalityDto>>(
+            http,
+            $"geography/regions/{Uri.EscapeDataString(regionCode)}/localities",
+            cancellationToken);
+    }
+
+    public static async Task<PhilippineLocationMatchDto?> ResolvePhilippineLocationAsync(
+        string query,
+        CancellationToken cancellationToken = default)
+    {
+        using var http = ApiConfig.CreateHttpClient();
+        using var response = await http.GetAsync(
+            $"geography/resolve?query={Uri.EscapeDataString(query)}",
+            cancellationToken);
+        if (response.StatusCode == HttpStatusCode.NotFound)
+        {
+            return null;
+        }
+
+        return await ReadAsync<PhilippineLocationMatchDto>(response, cancellationToken);
+    }
+
+    public static async Task<MapPointDto> GeocodeAsync(string address, CancellationToken cancellationToken = default)
+    {
+        using var http = await ApiConfig.CreateAuthorizedHttpClientAsync();
+        return await GetAsync<MapPointDto>(
+            http,
+            $"maps/geocode?address={Uri.EscapeDataString(address)}",
+            cancellationToken);
+    }
+
     private static Task<T> GetAsync<T>(HttpClient http, string endpoint, CancellationToken cancellationToken)
     {
         return ApiClientHelper.GetAsync<T>(http, endpoint, cancellationToken);
     }
 
-    private static Task<T> ReadAsync<T>(HttpResponseMessage response, CancellationToken cancellationToken)
+    private static async Task<T> ReadAsync<T>(HttpResponseMessage response, CancellationToken cancellationToken)
     {
         if (!response.IsSuccessStatusCode)
         {
@@ -332,6 +393,34 @@ internal sealed record CustomerMeDto(
     IReadOnlyList<MotorcycleDto> Motorcycles);
 
 internal sealed record PlaceholderFileDto(string Url);
+internal sealed record PhilippineRegionDto(string Code, string Name);
+internal sealed record PhilippineLocalityDto(string Code, string Name, string Type, string RegionCode, string? Province);
+internal sealed record PhilippineLocationMatchDto(PhilippineRegionDto Region, PhilippineLocalityDto Locality);
+internal sealed record ShopReputationDto(
+    int ShopId,
+    decimal AverageRating,
+    int ReviewCount,
+    int CompletedJobs,
+    IReadOnlyList<ShopTechnicianSummaryDto> TopTechnicians,
+    IReadOnlyList<ShopCustomerReviewDto> RecentReviews);
+internal sealed record ShopTechnicianSummaryDto(
+    int MechanicId,
+    string FullName,
+    string? ProfileImageUrl,
+    decimal AverageRating,
+    int ReviewCount,
+    int CompletedJobs,
+    int? YearsExperience,
+    string AvailabilityStatus,
+    bool IsVerified);
+internal sealed record ShopCustomerReviewDto(
+    int ReviewId,
+    int Rating,
+    string? Comment,
+    string CustomerName,
+    string TechnicianName,
+    string? ServiceName,
+    DateTime CreatedAt);
 
 internal sealed record NotificationDto(
     int NotificationId,

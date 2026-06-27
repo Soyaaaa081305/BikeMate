@@ -264,7 +264,7 @@ public abstract class MechanicPageBase : ContentPage
 #endif
     }
 
-    protected static async Task<(decimal Latitude, decimal Longitude, decimal? Accuracy, bool Fallback)> ResolveAreaAsync()
+    protected static async Task<(decimal Latitude, decimal Longitude, decimal? Accuracy)?> ResolveAreaAsync()
     {
         try
         {
@@ -280,26 +280,29 @@ public abstract class MechanicPageBase : ContentPage
                     ?? await Geolocation.Default.GetLastKnownLocationAsync();
                 if (location is not null)
                 {
-                    return ((decimal)location.Latitude, (decimal)location.Longitude, (decimal?)location.Accuracy, false);
+                    return ((decimal)location.Latitude, (decimal)location.Longitude, (decimal?)location.Accuracy);
                 }
             }
         }
         catch (Exception ex)
         {
-            Debug.WriteLine($"Location resolution failed, using fallback: {ex}");
+            Debug.WriteLine($"Location resolution failed: {ex}");
         }
 
-        return (14.599512m, 120.984222m, null, true);
+        return null;
     }
 
     protected async Task UseMyAreaAsync(Func<string, Task> afterUpdate)
     {
         var area = await ResolveAreaAsync();
-        await RiderApiClient.UpdateLocationAsync(null, area.Latitude, area.Longitude, area.Accuracy);
-        var message = area.Fallback
-            ? "GPS was unavailable, so BikeMate saved the Metro Manila test area for matching."
-            : "Your current area was saved. Incoming jobs are now filtered nearby first.";
-        await afterUpdate(message);
+        if (area is null)
+        {
+            await afterUpdate("GPS location is unavailable. Turn on precise location and try again.");
+            return;
+        }
+
+        await RiderApiClient.UpdateLocationAsync(null, area.Value.Latitude, area.Value.Longitude, area.Value.Accuracy);
+        await afterUpdate("Your current area was saved. Incoming jobs are now filtered nearby first.");
     }
 }
 

@@ -6,6 +6,7 @@
         {
             InitializeComponent();
             BindingContext = new MainViewModel();
+            Helpers.AppVisualPolish.Apply((View)Content);
         }
     }
 }

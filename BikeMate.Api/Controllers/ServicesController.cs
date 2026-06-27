@@ -1,4 +1,5 @@
 using BikeMate.Core.DTOs;
+using BikeMate.Core.Services;
 using BikeMate.Infrastructure.Data;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -23,13 +24,27 @@ public sealed class ServicesController(BikeMateDbContext db) : ControllerBase
 
     [HttpGet("shops")]
     [AllowAnonymous]
-    public async Task<ActionResult<IReadOnlyCollection<ShopSummaryDto>>> GetShops(CancellationToken cancellationToken)
+    public async Task<ActionResult<IReadOnlyCollection<ShopSummaryDto>>> GetShops(
+        CancellationToken cancellationToken,
+        [FromQuery] string? concern = null)
     {
-        return Ok(await db.Shops
+        var shops = await db.Shops
+            .Include(x => x.Services)
+            .ThenInclude(x => x.Category)
             .Where(x => x.ShopStatus == "verified")
             .OrderBy(x => x.ShopName)
+            .ToArrayAsync(cancellationToken);
+
+        return Ok(shops
+            .Where(shop => shop.Services.Any(service =>
+                service.IsActive &&
+                RepairConcernMatcher.Matches(
+                    concern,
+                    service.Category?.CategoryName,
+                    service.ServiceName,
+                    service.ServiceDescription)))
             .Select(x => new ShopSummaryDto(x.ShopId, x.ShopName, x.AddressLine, x.City, x.ContactNumber, x.ShopStatus, x.Latitude, x.Longitude))
-            .ToArrayAsync(cancellationToken));
+            .ToArray());
     }
 
     [HttpGet("shops/{shopId:int}/services")]
