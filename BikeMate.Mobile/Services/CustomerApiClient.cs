@@ -51,6 +51,36 @@ internal static class CustomerApiClient
         await ReadAsync<object>(response, cancellationToken);
     }
 
+    public static async Task UpdateCustomerProfileImageAsync(string imageUrl, CancellationToken cancellationToken = default)
+    {
+        using var http = await ApiConfig.CreateAuthorizedHttpClientAsync();
+        using var response = await http.PutAsJsonAsync(
+            "customers/me/profile-image",
+            new UploadMediaDto(imageUrl, "profile_photo", "Customer profile photo"),
+            cancellationToken);
+        await ReadAsync<object>(response, cancellationToken);
+    }
+
+    public static async Task UpdateCustomerValidIdAsync(string imageUrl, CancellationToken cancellationToken = default)
+    {
+        using var http = await ApiConfig.CreateAuthorizedHttpClientAsync();
+        using var response = await http.PutAsJsonAsync(
+            "customers/me/valid-id",
+            new UploadMediaDto(imageUrl, "valid_id", "Customer valid ID"),
+            cancellationToken);
+        await ReadAsync<object>(response, cancellationToken);
+    }
+
+    public static async Task DeleteCustomerAccountAsync(CancellationToken cancellationToken = default)
+    {
+        using var http = await ApiConfig.CreateAuthorizedHttpClientAsync();
+        using var response = await http.DeleteAsync("customers/me", cancellationToken);
+        if (!response.IsSuccessStatusCode)
+        {
+            await ReadAsync<object>(response, cancellationToken);
+        }
+    }
+
     public static async Task<CustomerAddressDto> UpsertAddressAsync(CustomerAddressDto? existing, UpsertCustomerAddressDto dto, CancellationToken cancellationToken = default)
     {
         using var http = await ApiConfig.CreateAuthorizedHttpClientAsync();
@@ -131,6 +161,13 @@ internal static class CustomerApiClient
     {
         using var http = await ApiConfig.CreateAuthorizedHttpClientAsync();
         return await GetAsync<IReadOnlyList<MessageDto>>(http, $"conversations/{conversationId}/messages", cancellationToken);
+    }
+
+    public static async Task MarkConversationReadAsync(int conversationId, CancellationToken cancellationToken = default)
+    {
+        using var http = await ApiConfig.CreateAuthorizedHttpClientAsync();
+        using var response = await http.PutAsync($"conversations/{conversationId}/read-all", null, cancellationToken);
+        await ReadAsync<object>(response, cancellationToken);
     }
 
     public static async Task<UploadedFileDto> UploadFileAsync(FileResult file, string folder = "chat", CancellationToken cancellationToken = default)
@@ -251,7 +288,16 @@ internal static class CustomerApiClient
 
     private static Task<T> ReadAsync<T>(HttpResponseMessage response, CancellationToken cancellationToken)
     {
-        return ApiClientHelper.ReadAsync<T>(response, cancellationToken);
+        if (!response.IsSuccessStatusCode)
+        {
+            var error = await response.Content.ReadAsStringAsync(cancellationToken);
+            throw new InvalidOperationException(string.IsNullOrWhiteSpace(error)
+                ? $"API request failed with {(int)response.StatusCode}."
+                : error);
+        }
+
+        return await response.Content.ReadFromJsonAsync<T>(cancellationToken)
+            ?? throw new InvalidOperationException("The API returned an empty response.");
     }
 
     private static string ContentTypeFor(FileResult file)
@@ -269,10 +315,19 @@ internal sealed record CustomerMeDto(
     int ClientId,
     int UserId,
     string FirstName,
+    string? MiddleName,
     string LastName,
     string Email,
     string? PhoneNumber,
     string? ProfileImageUrl,
+    bool EmailVerified,
+    bool PhoneVerified,
+    string AccountStatus,
+    DateTime CreatedAt,
+    DateTime? UpdatedAt,
+    string? Sex,
+    DateTime? Birthdate,
+    string? ValidIdImageUrl,
     IReadOnlyList<CustomerAddressDto> Addresses,
     IReadOnlyList<MotorcycleDto> Motorcycles);
 
