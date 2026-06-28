@@ -77,6 +77,7 @@ public partial class LoginPage : ContentPage
                     await SecureStorage.Default.SetAsync("access_token", auth.AccessToken);
                     var role = PickPrimaryRole(auth.User.Roles);
                     await SecureStorage.Default.SetAsync("primary_role", role);
+                    await SecureStorage.Default.SetAsync("user_id", auth.User.UserId.ToString());
                     navigatedAway = true;
                     await AppNavigation.NavigateByRoleAsync(role);
                     return;

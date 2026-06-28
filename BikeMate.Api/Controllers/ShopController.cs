@@ -167,7 +167,7 @@ public sealed class ShopController(BikeMateDbContext db) : ControllerBase
         return Ok(await db.ShopMechanics
             .Include(x => x.Mechanic).ThenInclude(x => x!.User)
             .Where(x => x.ShopId == shop.ShopId && x.IsActive)
-            .Select(x => new MechanicProfileDto(x.MechanicId, x.Mechanic!.User!.FirstName + " " + x.Mechanic.User.LastName, x.Mechanic.Bio, x.Mechanic.YearsExperience, x.Mechanic.IsVerified, x.Mechanic.AvailabilityStatus, x.Mechanic.AverageRating, x.Mechanic.TotalCompletedJobs))
+            .Select(x => new MechanicProfileDto(x.MechanicId, x.Mechanic!.User!.FirstName + " " + x.Mechanic.User.LastName, x.Mechanic.User.ProfileImageUrl, x.Mechanic.Bio, x.Mechanic.YearsExperience, x.Mechanic.IsVerified, x.Mechanic.AvailabilityStatus, x.Mechanic.AverageRating, x.Mechanic.TotalCompletedJobs))
             .ToArrayAsync(cancellationToken));
     }
 

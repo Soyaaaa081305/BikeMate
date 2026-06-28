@@ -24,16 +24,17 @@ public static class AppVisualPolish
 
             case Button button:
                 var isSymbol = button.Text is "<" or ">" or "+" or "-" or "x" or "X";
-                button.FontSize = isSymbol ? AppTypography.TitleSize : AppTypography.BodySize;
+                button.FontSize = isSymbol ? AppTypography.TitleSize : Math.Max(button.FontSize, AppTypography.BodySize);
                 button.FontFamily = (button.FontAttributes & FontAttributes.Bold) != 0
                     ? AppTypography.DisplayFont
                     : AppTypography.BodyFont;
                 button.CharacterSpacing = 0;
                 button.CornerRadius = Math.Clamp(button.CornerRadius <= 0 ? 8 : button.CornerRadius, 0, 8);
-                button.MinimumHeightRequest = 44;
-                if (button.HeightRequest is > 0 and < 44)
+                button.Padding = button.Padding == default ? new Thickness(16, 0) : button.Padding;
+                button.MinimumHeightRequest = isSymbol ? 40 : 46;
+                if (button.HeightRequest > 0 && button.HeightRequest < button.MinimumHeightRequest)
                 {
-                    button.HeightRequest = 44;
+                    button.HeightRequest = button.MinimumHeightRequest;
                 }
                 break;
 

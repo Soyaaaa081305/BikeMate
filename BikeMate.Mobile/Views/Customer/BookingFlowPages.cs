@@ -563,12 +563,14 @@ internal static class BookingVisuals
             Text = text,
             Command = command,
             BackgroundColor = Colors.White,
-            BorderColor = CustomerUi.Orange,
+            BorderColor = CustomerUi.Border,
             BorderWidth = 1,
-            TextColor = CustomerUi.Orange,
-            FontSize = 13,
+            TextColor = CustomerUi.Dark,
+            FontSize = CustomerUi.BodySize,
             CornerRadius = 8,
-            HeightRequest = 48,
+            HeightRequest = 46,
+            MinimumHeightRequest = 46,
+            Padding = new Thickness(16, 0),
             FontAttributes = FontAttributes.Bold,
             FontFamily = CustomerUi.FontDisplay
         };
@@ -595,9 +597,11 @@ internal static class BookingVisuals
             Command = command,
             BackgroundColor = CustomerUi.Orange,
             TextColor = Colors.White,
-            FontSize = 13,
+            FontSize = CustomerUi.BodySize,
             CornerRadius = 8,
             HeightRequest = 48,
+            MinimumHeightRequest = 48,
+            Padding = new Thickness(18, 0),
             FontAttributes = FontAttributes.Bold,
             FontFamily = CustomerUi.FontDisplay
         };

@@ -297,9 +297,12 @@ public partial class OtpVerificationPage : ContentPage
             BackgroundColor = Color.FromArgb(Orange),
             TextColor = Colors.White,
             CornerRadius = 8,
-            HeightRequest = 46,
-            FontSize = 13,
+            HeightRequest = 48,
+            MinimumHeightRequest = 48,
+            Padding = new Thickness(18, 0),
+            FontSize = AppTypography.BodySize,
             FontAttributes = FontAttributes.Bold,
+            FontFamily = AppTypography.DisplayFont,
             IsEnabled = isEnabled,
             Command = new Command(async () => await action())
         };

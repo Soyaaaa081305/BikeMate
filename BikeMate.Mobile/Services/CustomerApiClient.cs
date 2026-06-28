@@ -30,6 +30,7 @@ internal static class CustomerApiClient
 
             await SecureStorage.Default.SetAsync("access_token", auth.AccessToken);
             await SecureStorage.Default.SetAsync("primary_role", role);
+            await SecureStorage.Default.SetAsync("user_id", auth.User.UserId.ToString());
             return true;
         }
         catch (Exception ex)

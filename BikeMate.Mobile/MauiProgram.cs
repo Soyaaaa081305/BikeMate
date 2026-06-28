@@ -22,13 +22,13 @@ namespace BikeMate
             builder.Services.AddHttpClient("BikeMateApi", client =>
             {
                 client.BaseAddress = new Uri(ApiConfig.BaseUrl);
+                ApiConfig.AddRequiredHeaders(client);
             })
             .ConfigurePrimaryHttpMessageHandler(() =>
             {
                 var handler = new HttpClientHandler();
 
-                if (ApiConfig.BaseUrl.Contains("10.0.2.2", StringComparison.OrdinalIgnoreCase) ||
-                    ApiConfig.BaseUrl.Contains("localhost", StringComparison.OrdinalIgnoreCase))
+                if (ApiConfig.UsesLocalDevelopmentCertificate)
                 {
                     handler.ServerCertificateCustomValidationCallback =
                         HttpClientHandler.DangerousAcceptAnyServerCertificateValidator;

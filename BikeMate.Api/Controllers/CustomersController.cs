@@ -191,7 +191,7 @@ public sealed class CustomersController(BikeMateDbContext db) : ControllerBase
             .Where(x => x.AvailabilityStatus != "offline")
             .OrderByDescending(x => x.AverageRating)
             .Take(5)
-            .Select(x => new MechanicProfileDto(x.MechanicId, x.User!.FirstName + " " + x.User.LastName, x.Bio, x.YearsExperience, x.IsVerified, x.AvailabilityStatus, x.AverageRating, x.TotalCompletedJobs))
+            .Select(x => new MechanicProfileDto(x.MechanicId, x.User!.FirstName + " " + x.User.LastName, x.User.ProfileImageUrl, x.Bio, x.YearsExperience, x.IsVerified, x.AvailabilityStatus, x.AverageRating, x.TotalCompletedJobs))
             .ToArrayAsync(cancellationToken);
 
         return Ok(new

@@ -59,9 +59,11 @@ public sealed class MechanicsController(
     public async Task<ActionResult<MechanicProfileDto>> UpdateMe(UpdateMechanicProfileDto dto, CancellationToken cancellationToken)
     {
         var mechanic = await db.Mechanics.Include(x => x.User).SingleAsync(x => x.UserId == User.GetUserId(), cancellationToken);
-        mechanic.Bio = dto.Bio;
-        mechanic.YearsExperience = dto.YearsExperience;
-        mechanic.AvailabilityStatus = dto.AvailabilityStatus;
+        mechanic.Bio = dto.Bio ?? mechanic.Bio;
+        mechanic.YearsExperience = dto.YearsExperience ?? mechanic.YearsExperience;
+        mechanic.AvailabilityStatus = string.IsNullOrWhiteSpace(dto.AvailabilityStatus)
+            ? mechanic.AvailabilityStatus
+            : dto.AvailabilityStatus.Trim();
         mechanic.CurrentLatitude = dto.CurrentLatitude ?? mechanic.CurrentLatitude;
         mechanic.CurrentLongitude = dto.CurrentLongitude ?? mechanic.CurrentLongitude;
         mechanic.UpdatedAt = DateTime.UtcNow;

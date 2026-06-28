@@ -66,6 +66,22 @@ public static class AppNavigation
         });
     }
 
+    public static async Task<bool> ConfirmAndSignOutAsync(Page page, string? loginMessage = null)
+    {
+        var confirmed = await page.DisplayAlertAsync(
+            "Log out?",
+            "You will need to sign in again to continue using BikeMate.",
+            "Log out",
+            "Cancel");
+        if (!confirmed)
+        {
+            return false;
+        }
+
+        await SignOutAsync(loginMessage);
+        return true;
+    }
+
     public static void ClearSavedSession(string loginMessage)
     {
         SecureStorage.Default.Remove("access_token");

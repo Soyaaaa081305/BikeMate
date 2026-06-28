@@ -113,8 +113,11 @@ public abstract class CustomerPageBase : ContentPage
             TextColor = Colors.White,
             CornerRadius = 8,
             HeightRequest = 48,
+            MinimumHeightRequest = 48,
+            Padding = new Thickness(18, 0),
             FontAttributes = FontAttributes.Bold,
-            FontFamily = CustomerUi.FontDisplay
+            FontFamily = CustomerUi.FontDisplay,
+            FontSize = CustomerUi.BodySize
         };
     }
 
@@ -129,8 +132,12 @@ public abstract class CustomerPageBase : ContentPage
             BorderColor = CustomerUi.Border,
             BorderWidth = 1,
             CornerRadius = 8,
-            HeightRequest = 42,
-            FontFamily = CustomerUi.FontBody
+            HeightRequest = 46,
+            MinimumHeightRequest = 46,
+            Padding = new Thickness(16, 0),
+            FontFamily = CustomerUi.FontDisplay,
+            FontAttributes = FontAttributes.Bold,
+            FontSize = CustomerUi.BodySize
         };
     }
 
@@ -1011,7 +1018,7 @@ public sealed class CustomerProfilePage : CustomerPageBase
         stack.Add(DetailLine("Member since", customer is null ? "Loading" : customer.CreatedAt.ToLocalTime().ToString("MMM d, yyyy", CultureInfo.InvariantCulture)));
         stack.Add(DetailLine("Valid ID", string.IsNullOrWhiteSpace(customer?.ValidIdImageUrl) ? "Not uploaded" : "Uploaded"));
         stack.Add(GhostButton("Change password", new Command(async () => await Shell.Current.GoToAsync(nameof(PasswordResetPage)))));
-        stack.Add(GhostButton("Log out", new Command(async () => await AppNavigation.SignOutAsync())));
+        stack.Add(GhostButton("Log out", new Command(async () => await AppNavigation.ConfirmAndSignOutAsync(this))));
         return Card(stack, Colors.White, 8, new Thickness(14));
     }
 
@@ -1573,6 +1580,8 @@ public sealed class CustomerSchedulePage : CustomerPageBase
             FontAttributes = FontAttributes.Bold,
             FontFamily = CustomerUi.FontDisplay,
             FontSize = CustomerUi.BodySize,
+            HeightRequest = 42,
+            MinimumHeightRequest = 42,
             Padding = new Thickness(12, 0)
         };
     }
@@ -2095,7 +2104,11 @@ public sealed class CustomerChatPage : CustomerPageBase, IQueryAttributable
             FontFamily = CustomerUi.FontCaptionBold,
             BackgroundColor = Colors.Transparent,
             TextColor = CustomerUi.Orange,
-            WidthRequest = text.Length > 2 ? 58 : 38,
+            WidthRequest = text.Length > 2 ? 60 : 40,
+            HeightRequest = 40,
+            MinimumHeightRequest = 40,
+            Padding = new Thickness(10, 0),
+            FontAttributes = FontAttributes.Bold,
             Command = new Command(async () => await Shell.Current.DisplayAlertAsync("Contact", title, "OK"))
         };
     }
@@ -2368,9 +2381,11 @@ public sealed class CustomerChatPage : CustomerPageBase, IQueryAttributable
             BorderColor = CustomerUi.Border,
             BorderWidth = 1,
             CornerRadius = 8,
-            HeightRequest = 34,
+            HeightRequest = 40,
+            MinimumHeightRequest = 40,
             Padding = new Thickness(12, 0),
-            FontFamily = CustomerUi.FontBody,
+            FontFamily = CustomerUi.FontDisplay,
+            FontAttributes = FontAttributes.Bold,
             FontSize = CustomerUi.CaptionSize
         };
     }
@@ -2611,6 +2626,8 @@ public sealed class CustomerPaymentsPage : CustomerPageBase
             FontAttributes = FontAttributes.Bold,
             FontFamily = CustomerUi.FontDisplay,
             FontSize = CustomerUi.BodySize,
+            HeightRequest = 42,
+            MinimumHeightRequest = 42,
             Padding = new Thickness(12, 0)
         };
     }

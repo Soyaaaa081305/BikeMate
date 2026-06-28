@@ -28,8 +28,8 @@
         <ShellContent Title="Dashboard" Route="MechanicDashboardPage" ContentTemplate="{DataTemplate mechanic:MechanicDashboardPage}" />
         <ShellContent Title="Jobs" Route="MechanicJobsPage" ContentTemplate="{DataTemplate mechanic:MechanicJobsPage}" />
         <ShellContent Title="Messages" Route="MechanicMessagesPage" ContentTemplate="{DataTemplate mechanic:MechanicMessagesPage}" />
-        <ShellContent Title="History" Route="MechanicHistoryPage" ContentTemplate="{DataTemplate mechanic:MechanicHistoryPage}" />
         <ShellContent Title="Profile" Route="MechanicProfilePage" ContentTemplate="{DataTemplate mechanic:MechanicProfilePage}" />
+        <ShellContent Title="Logout" Route="MechanicLogoutPage" ContentTemplate="{DataTemplate mechanic:MechanicLogoutPage}" />
     </TabBar>
 
     <TabBar Route="ShopAdminArea">

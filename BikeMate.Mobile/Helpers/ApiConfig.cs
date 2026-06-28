@@ -22,12 +22,27 @@ public static class ApiConfig
         "https://localhost:5001/api/";
 #endif
 
+    public static bool UsesLocalDevelopmentCertificate =>
+        BaseUrl.Contains("10.0.2.2", StringComparison.OrdinalIgnoreCase) ||
+        BaseUrl.Contains("localhost", StringComparison.OrdinalIgnoreCase);
+
+    public static bool UsesNgrokTunnel =>
+        Uri.TryCreate(BaseUrl, UriKind.Absolute, out var uri) &&
+        uri.Host.Contains("ngrok", StringComparison.OrdinalIgnoreCase);
+
+    public static void AddRequiredHeaders(HttpClient http)
+    {
+        if (UsesNgrokTunnel)
+        {
+            http.DefaultRequestHeaders.TryAddWithoutValidation("ngrok-skip-browser-warning", "true");
+        }
+    }
+
     public static HttpClient CreateHttpClient()
     {
         var handler = new HttpClientHandler();
 
-        if (BaseUrl.Contains("10.0.2.2", StringComparison.OrdinalIgnoreCase) ||
-            BaseUrl.Contains("localhost", StringComparison.OrdinalIgnoreCase))
+        if (UsesLocalDevelopmentCertificate)
         {
             handler.ServerCertificateCustomValidationCallback =
                 HttpClientHandler.DangerousAcceptAnyServerCertificateValidator;
@@ -39,10 +54,7 @@ public static class ApiConfig
             Timeout = TimeSpan.FromSeconds(20)
         };
 
-        if (BaseUrl.Contains("ngrok-free.dev", StringComparison.OrdinalIgnoreCase))
-        {
-            http.DefaultRequestHeaders.Add("ngrok-skip-browser-warning", "true");
-        }
+        AddRequiredHeaders(http);
 
         return http;
     }

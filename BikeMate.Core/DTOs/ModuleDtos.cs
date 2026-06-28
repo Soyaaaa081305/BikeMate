@@ -164,6 +164,7 @@ public sealed record SelectShopDto(int ShopId, int? ShopServiceId);
 public sealed record MechanicProfileDto(
     int MechanicId,
     string FullName,
+    string? ProfileImageUrl,
     string? Bio,
     int? YearsExperience,
     bool IsVerified,
