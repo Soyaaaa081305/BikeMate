@@ -3,4 +3,5 @@
   <Project Path="BikeMate.Core/BikeMate.Core.csproj" />
   <Project Path="BikeMate.Infrastructure/BikeMate.Infrastructure.csproj" />
   <Project Path="BikeMate.Mobile/BikeMate.Mobile.csproj" />
+  <Project Path="BikeMate.Web/BikeMate.Web.csproj" />
 </Solution>
