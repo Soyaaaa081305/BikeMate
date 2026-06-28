@@ -1,0 +1,47 @@
+<div class="sidebar-brand">
+    <a class="sidebar-brand-link" href="">
+        <img src="/Images/bikematelogo.png" alt="BikeMate Logo" class="sidebar-brand-logo" />
+        <span class="sidebar-brand-text">BIKEMATE</span>
+    </a>
+</div>
+
+<nav class="sidebar-nav" aria-label="Admin navigation">
+    <div class="sidebar-group">Overview</div>
+    <NavLink class="sidebar-link" href="" Match="NavLinkMatch.All">
+        <i class="bi bi-speedometer2" aria-hidden="true"></i>
+        <span>Dashboard</span>
+    </NavLink>
+
+    <div class="sidebar-group">Operations</div>
+    <NavLink class="sidebar-link sidebar-link-danger" href="emergency">
+        <i class="bi bi-exclamation-octagon-fill" aria-hidden="true"></i>
+        <span>Emergency</span>
+    </NavLink>
+    <NavLink class="sidebar-link" href="users">
+        <i class="bi bi-people-fill" aria-hidden="true"></i>
+        <span>Users</span>
+    </NavLink>
+    <NavLink class="sidebar-link" href="shops">
+        <i class="bi bi-shop-window" aria-hidden="true"></i>
+        <span>Shops</span>
+    </NavLink>
+    <NavLink class="sidebar-link" href="mechanics">
+        <i class="bi bi-tools" aria-hidden="true"></i>
+        <span>Mechanics</span>
+    </NavLink>
+    <NavLink class="sidebar-link" href="requests">
+        <i class="bi bi-clipboard2-pulse" aria-hidden="true"></i>
+        <span>Requests</span>
+    </NavLink>
+    <NavLink class="sidebar-link" href="payments">
+        <i class="bi bi-credit-card-2-front" aria-hidden="true"></i>
+        <span>Payments</span>
+    </NavLink>
+
+    <div class="sidebar-footer">
+        <a class="sidebar-link sidebar-link-logout" href="/api/admin/logout">
+            <i class="bi bi-box-arrow-right" aria-hidden="true"></i>
+            <span>Logout</span>
+        </a>
+    </div>
+</nav>

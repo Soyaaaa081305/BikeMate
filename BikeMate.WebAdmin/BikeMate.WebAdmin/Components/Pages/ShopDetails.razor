@@ -1,0 +1,255 @@
+@page "/shops/details/{Id:int}"
+@rendermode InteractiveServer
+@using BikeMate.WebAdmin.DTOs
+@using BikeMate.WebAdmin.Services
+@inject AdminApiClient AdminApi
+@inject IJSRuntime JS
+
+<div class="mb-4 mt-3 d-flex justify-content-between align-items-center">
+    <h2 class="fw-bold text-dark mb-0">Shop Profile</h2>
+    
+    <div class="d-flex gap-2 align-items-center">
+        @if (shop != null)
+        {
+            @if (shop.Status.ToLower() != "verified")
+            {
+                <button class="btn btn-success shadow-sm" @onclick="ApproveShop" disabled="@isProcessing">
+                    <i class="bi bi-check-circle me-1"></i> Approve
+                </button>
+            }
+            @if (shop.Status.ToLower() != "suspended")
+            {
+                <button class="btn btn-outline-danger shadow-sm" @onclick="SuspendShop" disabled="@isProcessing">
+                    <i class="bi bi-slash-circle me-1"></i> Suspend
+                </button>
+            }
+        }
+        <a href="/shops" class="btn btn-outline-secondary shadow-sm ms-2">
+            <i class="bi bi-arrow-left"></i> Back
+        </a>
+    </div>
+</div>
+
+<ActionMessage Message="@statusMessage" AlertType="@statusType" OnMessageCleared="() => statusMessage = null" />
+
+@if (shop == null)
+{
+    @if (!string.IsNullOrWhiteSpace(statusMessage))
+    {
+        <div class="card border-0 shadow-sm">
+            <div class="card-body p-5 text-center">
+                <h5 class="fw-bold">Shop profile unavailable</h5>
+                <p class="text-muted">@statusMessage</p>
+                <button class="btn btn-outline-primary" @onclick="LoadShop">Retry</button>
+            </div>
+        </div>
+    }
+    else
+    {
+        <div class="p-5 text-center">
+            <div class="spinner-border text-info" role="status"></div>
+            <p class="mt-2 text-muted">Loading complete shop profile...</p>
+        </div>
+    }
+}
+else
+{
+    <div class="row g-4">
+        <div class="col-md-8">
+            <div class="card shadow-sm border-0 h-100">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-start mb-4">
+                        <div>
+                            <h3 class="fw-bold text-primary mb-1">@shop.ShopName</h3>
+                            <p class="text-muted mb-0"><i class="bi bi-geo-alt-fill me-2"></i>@shop.FullAddress</p>
+                        </div>
+                        @if (shop.Status.ToLower() == "verified")
+                        {
+                            <span class="badge bg-success bg-opacity-10 text-success border border-success border-opacity-25 rounded-pill px-3 py-2">Verified Partner</span>
+                        }
+                        else
+                        {
+                            <span class="badge bg-warning bg-opacity-10 text-warning border border-warning border-opacity-25 rounded-pill text-dark px-3 py-2">@shop.Status.ToUpper()</span>
+                        }
+                    </div>
+
+                    <h6 class="fw-bold text-uppercase text-muted mb-3">About the Shop</h6>
+                    <p class="mb-4">@shop.Description</p>
+
+                    <div class="row bg-light p-3 rounded-3">
+                        <div class="col-sm-6 mb-3 mb-sm-0">
+                            <h6 class="text-muted mb-1 text-uppercase small">Owner / Manager</h6>
+                            <p class="fw-bold mb-0">@shop.OwnerName</p>
+                        </div>
+                        <div class="col-sm-6">
+                            <h6 class="text-muted mb-1 text-uppercase small">Contact Number</h6>
+                            <p class="fw-bold mb-0">@shop.ContactNumber</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-4">
+            <div class="card shadow-sm border-0 h-100 bg-light">
+                <div class="card-body text-center pt-5">
+                    <div class="mb-4">
+                        <i class="bi bi-shop text-primary opacity-50" style="font-size: 3rem;"></i>
+                    </div>
+                    <h5 class="fw-bold text-dark mb-3">System Record</h5>
+
+                    <ul class="list-group list-group-flush text-start shadow-sm rounded">
+                        <li class="list-group-item d-flex justify-content-between align-items-center">
+                            Shop ID
+                            <span class="badge bg-secondary rounded-pill">#@shop.ShopId</span>
+                        </li>
+                        <li class="list-group-item d-flex justify-content-between align-items-center">
+                            Date Registered
+                            <span class="text-muted small">@shop.CreatedAt.ToString("MMM dd, yyyy")</span>
+                        </li>
+                        <li class="list-group-item d-flex justify-content-between align-items-center">
+                            Total Mechanics
+                            <span class="badge bg-primary rounded-pill">@shop.Mechanics.Count</span>
+                        </li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="card shadow-sm border-0 mt-4">
+        <div class="card-header bg-white pt-4 pb-2 border-bottom-0">
+            <h5 class="fw-bold mb-0"><i class="bi bi-tools me-2 text-primary"></i>Assigned Mechanics</h5>
+        </div>
+        <div class="card-body p-0">
+            @if (shop.Mechanics.Count == 0)
+            {
+                <div class="p-4 text-center text-muted">
+                    No mechanics are currently assigned to this shop.
+                </div>
+            }
+            else
+            {
+                <div class="table-responsive">
+                    <table class="table table-hover align-middle mb-0">
+                        <thead class="table-light text-muted small text-uppercase">
+                            <tr>
+                                <th class="ps-4">Mechanic ID</th>
+                                <th>Name</th>
+                                <th>Rating</th>
+                                <th>Current Status</th>
+                                <th class="text-end pe-4">Profile</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var mech in shop.Mechanics)
+                            {
+                                <tr>
+                                    <td class="ps-4 fw-bold text-muted">#@mech.MechanicId</td>
+                                    <td class="fw-semibold">@mech.Name</td>
+                                    <td>? @mech.Rating</td>
+                                    <td>
+                                        @if (mech.Status.ToLower() == "online")
+                                        {
+                                            <span class="badge bg-success bg-opacity-10 text-success border border-success border-opacity-25 rounded-pill">Online</span>
+                                        }
+                                        else
+                                        {
+                                            <span class="badge bg-secondary bg-opacity-10 text-secondary border border-secondary border-opacity-25 rounded-pill">Offline</span>
+                                        }
+                                    </td>
+                                    <td class="text-end pe-4">
+                                        <a href="/mechanics/details/@mech.MechanicId" class="btn btn-sm btn-outline-secondary">View Profile</a>
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter]
+    public int Id { get; set; }
+
+    private ShopDetailsDto? shop;
+    private bool isProcessing = false;
+    private string? statusMessage;
+    private string statusType = "danger";
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadShop();
+    }
+
+    private async Task LoadShop()
+    {
+        statusMessage = null;
+        try
+        {
+            shop = await AdminApi.GetShopDetailsAsync(Id);
+            if (shop == null)
+            {
+                statusType = "danger";
+                statusMessage = AdminApi.LastError ?? "The shop could not be found.";
+            }
+        }
+        catch (Exception ex)
+        {
+            shop = null;
+            statusType = "danger";
+            statusMessage = ex.Message;
+        }
+    }
+
+    private async Task ApproveShop()
+    {
+        bool confirmed = await JS.InvokeAsync<bool>("confirm", $"Are you sure you want to approve {shop?.ShopName}?");
+        if (!confirmed) return;
+
+        isProcessing = true;
+        try
+        {
+            await AdminApi.ApproveShopAsync(Id);
+            statusType = "success";
+            statusMessage = "Shop approved successfully.";
+            await LoadShop();
+        }
+        catch (Exception ex)
+        {
+            statusType = "danger";
+            statusMessage = ex.Message;
+        }
+        finally
+        {
+            isProcessing = false;
+        }
+    }
+
+    private async Task SuspendShop()
+    {
+        bool confirmed = await JS.InvokeAsync<bool>("confirm", $"WARNING: Are you sure you want to suspend {shop?.ShopName}? They will be removed from the active directory.");
+        if (!confirmed) return;
+
+        isProcessing = true;
+        try
+        {
+            await AdminApi.SuspendShopAsync(Id);
+            statusType = "success";
+            statusMessage = "Shop suspended successfully.";
+            await LoadShop();
+        }
+        catch (Exception ex)
+        {
+            statusType = "danger";
+            statusMessage = ex.Message;
+        }
+        finally
+        {
+            isProcessing = false;
+        }
+    }
+}
