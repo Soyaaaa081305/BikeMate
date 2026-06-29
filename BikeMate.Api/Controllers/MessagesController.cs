@@ -18,13 +18,22 @@ public sealed class MessagesController(
     BikeMateDbContext db,
     IMessageService messageService,
     IBookingConversationService bookingConversationService,
-    IHubContext<ChatHub> hubContext) : ControllerBase
+    IHubContext<ChatHub> hubContext,
+    ILogger<MessagesController> logger) : ControllerBase
 {
     [HttpGet]
     public async Task<ActionResult<IReadOnlyCollection<ConversationSummaryDto>>> GetConversations(CancellationToken cancellationToken)
     {
         var userId = User.GetUserId();
-        await bookingConversationService.SyncForUserAsync(userId, cancellationToken);
+        try
+        {
+            await bookingConversationService.SyncForUserAsync(userId, cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Conversation sync failed for user {UserId}; returning existing conversations.", userId);
+        }
+
         var conversations = await db.Conversations
             .Include(x => x.Participants)
             .ThenInclude(x => x.User)
@@ -80,7 +89,12 @@ public sealed class MessagesController(
             .Include(x => x.Request).ThenInclude(x => x!.ShopService)
             .Include(x => x.Request).ThenInclude(x => x!.Mechanic).ThenInclude(x => x!.User)
             .Include(x => x.Request).ThenInclude(x => x!.CurrentStatus)
-            .SingleAsync(x => x.ConversationId == conversationId && x.Participants.Any(p => p.UserId == userId), cancellationToken);
+            .SingleOrDefaultAsync(x => x.ConversationId == conversationId && x.Participants.Any(p => p.UserId == userId), cancellationToken);
+        if (conversation is null)
+        {
+            return NotFound(new { error = "Conversation not found." });
+        }
+
         return Ok(ToSummary(conversation, userId));
     }
 
@@ -148,14 +162,22 @@ public sealed class MessagesController(
         var isEmergency = conversation.ConversationType is "emergency_support" or "emergency_request";
         var isShop = conversation.ConversationType == "booking_shop";
         var isMechanic = conversation.ConversationType == "booking_mechanic";
+        var isShopOwner = isShop && conversation.Request?.Shop?.OwnerUserId == userId;
+        var isAssignedMechanic = isMechanic && conversation.Request?.Mechanic?.UserId == userId;
         var title = isEmergency
             ? "BikeMate Emergency"
             : isShop
-            ? conversation.Request?.Shop?.ShopName
+            ? isShopOwner ? FullName(otherUser) : conversation.Request?.Shop?.ShopName
             : isMechanic
-                ? FullName(conversation.Request?.Mechanic?.User ?? otherUser)
+                ? isAssignedMechanic ? FullName(otherUser) : FullName(conversation.Request?.Mechanic?.User ?? otherUser)
                 : FullName(otherUser);
-        var partnerType = isEmergency ? "Emergency support" : isShop ? "Shop" : isMechanic ? "Assigned mechanic" : "BikeMate contact";
+        var partnerType = isEmergency
+            ? "Emergency support"
+            : isShop
+                ? isShopOwner ? "Customer" : "Shop"
+                : isMechanic
+                    ? isAssignedMechanic ? "Customer" : "Assigned mechanic"
+                    : "BikeMate contact";
         var service = conversation.Request?.ShopService?.ServiceName
             ?? conversation.Request?.IssueDescription
             ?? "Booking support";

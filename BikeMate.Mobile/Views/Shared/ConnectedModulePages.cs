@@ -191,7 +191,7 @@ public abstract class ConnectedModulePage : ContentPage
             HeightRequest = 40,
             Padding = new Thickness(12, 0),
             FontSize = 13,
-            Command = new Command(async () => await AppNavigation.SignOutAsync())
+            Command = new Command(async () => await AppNavigation.ConfirmAndSignOutAsync(this))
         }, 2, 0);
 
         return grid;

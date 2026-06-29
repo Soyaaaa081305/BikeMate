@@ -12,6 +12,7 @@ public static class MechanicMappingExtensions
         return new MechanicProfileDto(
             mechanic.MechanicId,
             mechanic.User!.FirstName + " " + mechanic.User.LastName,
+            mechanic.User.ProfileImageUrl,
             mechanic.Bio,
             mechanic.YearsExperience,
             mechanic.IsVerified,

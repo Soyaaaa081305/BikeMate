@@ -271,6 +271,7 @@ namespace BikeMate
                         var role = PickPrimaryRole(auth.User.Roles);
                         await SecureStorage.Default.SetAsync("access_token", auth.AccessToken);
                         await SecureStorage.Default.SetAsync("primary_role", role);
+                        await SecureStorage.Default.SetAsync("user_id", auth.User.UserId.ToString());
                         await AppNavigation.NavigateByRoleAsync(role);
                         return;
                     }

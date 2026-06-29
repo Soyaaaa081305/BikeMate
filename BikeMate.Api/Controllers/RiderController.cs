@@ -71,11 +71,13 @@ public sealed class RiderController(
     public async Task<ActionResult<IReadOnlyCollection<ServiceRequestDto>>> Incoming([FromQuery] decimal radiusKm = 8m, CancellationToken cancellationToken = default)
     {
         var mechanic = await GetMechanicAsync(cancellationToken);
+        var availableStatuses = new[] { RequestStatuses.Pending, RequestStatuses.Paid, RequestStatuses.PaymentPending };
         var requests = await serviceRequestService.Query()
             .Where(x => x.MechanicId == null &&
-                        x.CurrentStatus!.StatusName == "pending" &&
+                        availableStatuses.Contains(x.CurrentStatus!.StatusName) &&
                         !x.IssueDescription.StartsWith("[EMERGENCY]"))
             .OrderByDescending(x => x.CreatedAt)
+            .Select(ServiceRequestService.ToDtoExpression())
             .ToArrayAsync(cancellationToken);
 
         return Ok(ToNearbyRequestDtos(requests, mechanic, radiusKm));
@@ -88,6 +90,7 @@ public sealed class RiderController(
         var requests = await serviceRequestService.Query()
             .Where(x => x.MechanicId == null && x.IssueDescription.StartsWith("[EMERGENCY]"))
             .OrderByDescending(x => x.CreatedAt)
+            .Select(ServiceRequestService.ToDtoExpression())
             .ToArrayAsync(cancellationToken);
 
         return Ok(ToNearbyRequestDtos(requests, mechanic, radiusKm));
@@ -99,9 +102,12 @@ public sealed class RiderController(
         var mechanicId = await GetMechanicIdAsync(cancellationToken);
         return Ok(await serviceRequestService.Query()
             .Where(x => x.MechanicId == mechanicId &&
-                        x.CurrentStatus!.StatusName != "completed" &&
-                        x.CurrentStatus.StatusName != "cancelled" &&
-                        x.CurrentStatus.StatusName != "rejected")
+                        x.CurrentStatus!.StatusName != RequestStatuses.Completed &&
+                        x.CurrentStatus.StatusName != RequestStatuses.Cancelled &&
+                        x.CurrentStatus.StatusName != RequestStatuses.Rejected &&
+                        x.CurrentStatus.StatusName != RequestStatuses.Pending &&
+                        x.CurrentStatus.StatusName != RequestStatuses.Paid &&
+                        x.CurrentStatus.StatusName != RequestStatuses.PaymentPending)
             .OrderByDescending(x => x.CreatedAt)
             .Select(ServiceRequestService.ToDtoExpression())
             .FirstOrDefaultAsync(cancellationToken));
@@ -125,8 +131,11 @@ public sealed class RiderController(
     public async Task<ActionResult<ServiceRequestDto>> JobDetails(int id, CancellationToken cancellationToken)
     {
         var mechanicId = await GetMechanicIdAsync(cancellationToken);
+        var availableStatuses = new[] { RequestStatuses.Pending, RequestStatuses.Paid, RequestStatuses.PaymentPending };
         return Ok(await serviceRequestService.Query()
-            .Where(x => x.RequestId == id && (x.MechanicId == mechanicId || x.MechanicId == null))
+            .Where(x => x.RequestId == id &&
+                        (x.MechanicId == mechanicId ||
+                         x.MechanicId == null && availableStatuses.Contains(x.CurrentStatus!.StatusName)))
             .Select(ServiceRequestService.ToDtoExpression())
             .SingleAsync(cancellationToken));
     }
@@ -135,7 +144,19 @@ public sealed class RiderController(
     public async Task<ActionResult<ServiceRequestDto>> Accept(int id, CancellationToken cancellationToken)
     {
         var mechanicId = await GetMechanicIdAsync(cancellationToken);
-        var request = await db.ServiceRequests.SingleAsync(x => x.RequestId == id, cancellationToken);
+        var request = await db.ServiceRequests
+            .Include(x => x.CurrentStatus)
+            .SingleAsync(x => x.RequestId == id, cancellationToken);
+        if (request.MechanicId is not null && request.MechanicId != mechanicId)
+        {
+            return Forbid();
+        }
+
+        if (request.CurrentStatus?.StatusName is not "pending" and not "paid" and not "payment_pending")
+        {
+            return BadRequest(new { error = "This job is no longer available to accept." });
+        }
+
         request.MechanicId = mechanicId;
         await db.SaveChangesAsync(cancellationToken);
         var dto = await serviceRequestService.UpdateStatusAsync(id, "accepted", User.GetUserId(), "Accepted by rider.", cancellationToken);
@@ -147,6 +168,13 @@ public sealed class RiderController(
     [HttpPut("jobs/{id:int}/reject")]
     public async Task<ActionResult<ServiceRequestDto>> Reject(int id, CancellationToken cancellationToken)
     {
+        var mechanicId = await GetMechanicIdAsync(cancellationToken);
+        var request = await db.ServiceRequests.SingleAsync(x => x.RequestId == id, cancellationToken);
+        if (request.MechanicId is not null && request.MechanicId != mechanicId)
+        {
+            return Forbid();
+        }
+
         var dto = await serviceRequestService.UpdateStatusAsync(id, "rejected", User.GetUserId(), "Rejected by rider.", cancellationToken);
         await bookingHub.Clients.Group(BookingHub.GetRequestGroup(id)).SendAsync("ServiceStatusChanged", dto, cancellationToken);
         return Ok(dto);
@@ -155,6 +183,13 @@ public sealed class RiderController(
     [HttpPut("jobs/{id:int}/status")]
     public async Task<ActionResult<ServiceRequestDto>> UpdateStatus(int id, UpdateRequestStatusDto dto, CancellationToken cancellationToken)
     {
+        var mechanicId = await GetMechanicIdAsync(cancellationToken);
+        var ownsJob = await db.ServiceRequests.AnyAsync(x => x.RequestId == id && x.MechanicId == mechanicId, cancellationToken);
+        if (!ownsJob)
+        {
+            return Forbid();
+        }
+
         var mappedStatus = dto.Status switch
         {
             "on_the_way" => "en_route",
@@ -237,11 +272,17 @@ public sealed class RiderController(
             return Forbid();
         }
 
+        var savedMediaType = string.IsNullOrWhiteSpace(dto.MediaType) ? mediaType : dto.MediaType.Trim();
+        if (savedMediaType is not "before_photo" and not "after_photo" and not "completion_image" and not "completion_video")
+        {
+            savedMediaType = mediaType;
+        }
+
         db.RequestMedia.Add(new RequestMedia
         {
             RequestId = requestId,
             MediaUrl = dto.MediaUrl,
-            MediaType = mediaType,
+            MediaType = savedMediaType,
             Caption = dto.Caption,
             CreatedAt = DateTime.UtcNow
         });
@@ -259,7 +300,7 @@ public sealed class RiderController(
         return db.GetMechanicAsync(User.GetUserId(), cancellationToken);
     }
 
-    private static IReadOnlyCollection<ServiceRequestDto> ToNearbyRequestDtos(IEnumerable<ServiceRequest> requests, Mechanic mechanic, decimal radiusKm)
+    private static IReadOnlyCollection<ServiceRequestDto> ToNearbyRequestDtos(IEnumerable<ServiceRequestDto> requests, Mechanic mechanic, decimal radiusKm)
     {
         var mechanicHasLocation = mechanic.CurrentLatitude is not null && mechanic.CurrentLongitude is not null;
 
@@ -275,30 +316,10 @@ public sealed class RiderController(
             .OrderBy(x => x.Distance ?? 999m)
             .ThenByDescending(x => x.Request.CreatedAt)
             .Take(30)
-            .Select(x => ToRequestDto(x.Request, x.Distance))
+            .Select(x => x.Request with { DistanceKm = x.Distance })
             .ToArray();
 
         return rows;
-    }
-
-    private static ServiceRequestDto ToRequestDto(ServiceRequest request, decimal? distanceKm)
-    {
-        return new ServiceRequestDto(
-            request.RequestId,
-            request.CurrentStatus!.StatusName,
-            request.Client!.User!.FirstName + " " + request.Client.User.LastName,
-            request.Mechanic is null ? null : request.Mechanic.User!.FirstName + " " + request.Mechanic.User.LastName,
-            request.Shop?.ShopName,
-            request.ShopService?.ServiceName,
-            request.IssueDescription,
-            request.ServiceLocationAddress,
-            request.ScheduledAt,
-            request.EstimatedTotal,
-            request.FinalTotal,
-            request.CreatedAt,
-            request.ServiceLatitude,
-            request.ServiceLongitude,
-            distanceKm);
     }
 
 }

@@ -726,7 +726,10 @@ public sealed class EmergencyLiveCallPage : CustomerPageBase, IQueryAttributable
             WidthRequest = 72,
             HeightRequest = 58,
             CornerRadius = 29,
-            FontSize = 11,
+            Padding = new Thickness(8, 0),
+            FontSize = CustomerUi.CaptionSize,
+            FontAttributes = FontAttributes.Bold,
+            FontFamily = CustomerUi.FontDisplay,
             IsEnabled = isEnabled,
             Command = new Command(async () => await action())
         };
