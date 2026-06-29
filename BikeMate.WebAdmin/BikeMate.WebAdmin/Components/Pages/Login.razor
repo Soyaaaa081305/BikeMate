@@ -1,0 +1,48 @@
+﻿@page "/login"
+@attribute [AllowAnonymous]
+@inject NavigationManager Navigation
+
+<PageTitle>BikeMate Admin | Login</PageTitle>
+
+<div class="d-flex align-items-center justify-content-center" style="height: 100vh; background-color: var(--bikemate-black);">
+    <div class="card shadow-lg border-0" style="width: 100%; max-width: 450px; background-color: var(--bikemate-charcoal);">
+        <div class="card-body p-5">
+
+            <div class="text-center mb-5">
+                <img src="/Images/bikematelogo.png" alt="BikeMate Logo" height="60" class="mb-3" />
+                <h3 class="fw-bold text-white mb-0" style="letter-spacing: 2px;">ADMIN PORTAL</h3>
+                <p class="text-muted small mt-1" style="color: var(--bikemate-slate) !important;">Authorized Personnel Only</p>
+            </div>
+
+            @if (Navigation.Uri.Contains("error=db"))
+            {
+                <div class="alert alert-danger bg-danger bg-opacity-25 text-white border-danger border-opacity-50 small text-center" role="alert">
+                    Unable to connect to the BikeMate database. Check that SQL Server is running and try again.
+                </div>
+            }
+            else if (Navigation.Uri.Contains("error=true"))
+            {
+                <div class="alert alert-danger bg-danger bg-opacity-25 text-white border-danger border-opacity-50 small text-center" role="alert">
+                    Invalid email or password.
+                </div>
+            }
+
+            <form method="post" action="/api/admin/cookie-login">
+                <div class="form-floating mb-3">
+                    <input type="email" name="email" class="form-control bg-dark text-white border-secondary" id="emailInput" placeholder="name@example.com" required />
+                    <label for="emailInput" style="color: var(--bikemate-slate);">Email Address</label>
+                </div>
+
+                <div class="form-floating mb-4">
+                    <input type="password" name="password" class="form-control bg-dark text-white border-secondary" id="passwordInput" placeholder="Password" required />
+                    <label for="passwordInput" style="color: var(--bikemate-slate);">Password</label>
+                </div>
+
+                <button type="submit" class="btn btn-primary w-100 py-3 fw-bold shadow-sm text-uppercase">
+                    <i class="bi bi-box-arrow-in-right me-2"></i> Access System
+                </button>
+            </form>
+
+        </div>
+    </div>
+</div>

@@ -1,0 +1,117 @@
+@page "/approvals"
+@rendermode InteractiveServer
+@using BikeMate.WebAdmin.DTOs
+@using BikeMate.WebAdmin.Services
+@inject AdminApiClient AdminApi
+
+<PageTitle>Admin - Pending Approvals</PageTitle>
+
+<div class="d-flex justify-content-between align-items-center mb-4 mt-3">
+    <h2 class="fw-bold text-dark">Pending Shop Approvals</h2>
+    <a href="/dashboard" class="btn btn-secondary shadow-sm">
+        Back to Dashboard
+    </a>
+</div>
+
+<ActionMessage Message="@statusMessage" AlertType="@statusType" OnMessageCleared="() => statusMessage = null" />
+
+<div class="card shadow-sm border-0 border-top border-warning border-4">
+    <div class="card-body p-0">
+        @if (pendingShops == null)
+        {
+            <div class="p-5 text-center">
+                <div class="spinner-border text-warning" role="status"></div>
+                <p class="mt-2 text-muted">Loading pending shops...</p>
+            </div>
+        }
+        else if (pendingShops.Length == 0)
+        {
+            <div class="p-5 text-center text-muted">
+                No pending approvals at this time.
+            </div>
+        }
+        else
+        {
+            <div class="table-responsive">
+                <table class="table table-hover align-middle mb-0">
+                    <thead class="table-light text-muted small text-uppercase border-bottom border-warning border-2">
+                        <tr>
+                            <th class="ps-4">Shop ID</th>
+                            <th>Shop Name</th>
+                            <th>Location</th>
+                            <th>Status</th>
+                            <th class="text-end pe-4">Verification</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var shop in pendingShops)
+                        {
+                            <tr>
+                                <td class="ps-4 fw-bold text-muted">#@shop.Id</td>
+                                <td class="fw-semibold">@shop.ShopName</td>
+                                <td class="text-muted">@shop.City</td>
+                                <td>
+                                    <span class="badge bg-warning bg-opacity-10 text-warning border border-warning border-opacity-25 rounded-pill text-dark">Pending Review</span>
+                                </td>
+                                <td class="text-end pe-4">
+                                    <button class="btn btn-sm btn-success shadow-sm me-1" @onclick="() => HandleApproval(shop.Id, true)">Approve</button>
+                                    <button class="btn btn-sm btn-outline-danger" @onclick="() => HandleApproval(shop.Id, false)">Reject</button>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+    </div>
+</div>
+
+@code {
+    private ShopDto[]? pendingShops;
+    private string? statusMessage;
+    private string statusType = "danger";
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadPendingShops();
+    }
+
+    private async Task LoadPendingShops()
+    {
+        try
+        {
+            pendingShops = await AdminApi.GetPendingShopsAsync();
+
+            // Force the screen to refresh after data arrives
+            StateHasChanged();
+        }
+        catch (Exception ex)
+        {
+            statusType = "danger";
+            statusMessage = $"Failed to load shops: {ex.Message}";
+        }
+    }
+
+    private async Task HandleApproval(int shopId, bool isApproved)
+    {
+        try
+        {
+            statusMessage = null;
+
+            // Uncomment this when you build the update endpoint!
+            // await AdminApi.ReviewShopAsync(shopId, isApproved);
+
+            statusType = isApproved ? "success" : "warning";
+            string actionText = isApproved ? "approved" : "rejected";
+            statusMessage = $"Shop #{shopId} was successfully {actionText}.";
+
+            // Reload the list to remove the shop from the screen
+            await LoadPendingShops();
+        }
+        catch (Exception)
+        {
+            statusType = "danger";
+            statusMessage = "Network error: Could not process the shop review.";
+        }
+    }
+}
